@@ -42,6 +42,8 @@ canvas.cert{width:100%;border:1px solid var(--line);border-radius:6px;margin:10p
 #bigbib .qr{background:#fff;border-radius:14px;padding:10px;margin:14px auto 0;width:min(52vw,210px)}#bigbib .qr svg{display:block;width:100%;height:auto}#bigbib .qrl{font-size:13px;color:#e2d9f3;margin-top:6px}
 #bigbib .say{font-size:18px;margin:18px 0 22px;line-height:1.5}#bigbib .x{background:#fff;color:var(--acc);border:0;border-radius:12px;padding:14px 40px;font-size:18px;font-weight:800}
 #bigbib .cand{border-top:1px solid rgba(255,255,255,.35);padding:10px 0;width:100%;max-width:420px}
+
+.inapp{border:3px solid #f59e0b;background:#fffbeb}.inapp a.btn{display:block;text-align:center;text-decoration:none}
 footer{font-size:12px;color:var(--sub);text-align:center;padding:16px}
 </style></head>
 <body>
@@ -203,16 +205,28 @@ function render(){
   if(s){$('#main').innerHTML=noticesHTML()+`<a class="back" href="#top">← 大会案内</a><div class="card sec"><h1 style="font-size:20px;margin:0 0 10px">${esc(s.title)}</h1>${md(s.body)}</div><a class="back" href="#top">← 大会案内</a>`;return}
   renderTop();
 }
+/* ---- アプリ内ブラウザ（LINEなど）：保存（Service Worker）が使えないので、Safari／Chromeで開き直してもらう ---- */
+const UA=navigator.userAgent||'';
+const INAPP=/\bLine\//i.test(UA)?'LINE':/Instagram/i.test(UA)?'Instagram':/FBAN|FBAV|FB_IAB/i.test(UA)?'Facebook':/Twitter/i.test(UA)?'X（Twitter）':(!('serviceWorker' in navigator)?'このアプリ':'');
+const IS_ANDROID=/Android/i.test(UA);
+function externalURL(){const u=new URL(location.href);u.searchParams.set('openExternalBrowser','1');return u.href}
+function inAppHTML(){
+  const br=IS_ANDROID?'Chrome':'Safari';
+  return `<div class="card inapp"><b>${esc(INAPP)}の中で開いています</b>
+   <div style="margin:6px 0 10px">この画面では「当日の案内を保存」が使えません（圏外で開けるようにする機能がアプリ内では動かないため）。<b>${br}で開き直してから保存</b>してください。番号の確認や案内を読むことは、このままでもできます。</div>
+   ${INAPP==='LINE'?`<a class="btn" href="${esc(externalURL())}">${br}で開き直す</a>`:''}
+   <div class="muted" style="margin-top:8px">${INAPP==='LINE'?'開き直せないときは、':''}画面の右下（または右上）の「︙」や共有ボタン →「${IS_ANDROID?'他のアプリで開く／ブラウザで開く':'Safariで開く'}」を選んでください。${br}では、番号の確認をもう一度行ってください。</div></div>`;
+}
 function renderTop(){
   const g=D.guide,sv=LS.get('kq50-saved',null);const pub=D.results&&D.results.published;
   $('#main').innerHTML=noticesHTML()+bibCardHTML()+`
   <div class="card"><dl class="sum">${g.summary.map(x=>`<dt>${esc(x.k)}</dt><dd>${esc(x.v)}${x.sub?`<small>${esc(x.sub)}</small>`:''}${x.links?`<div class="links">${x.links.map(([t,u])=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}の地図</a>`).join('')}</div>`:''}</dd>`).join('')}</dl></div>
   <div class="nav">${g.sections.map(s=>`<a href="#${s.id}">${esc(s.title)}</a>`).join('')}</div>
-  <div class="card"><button class="btn" id="saveBtn">当日の案内を保存</button>
-   <div class="saved" id="savedMsg">${sv?savedText(sv):'通信できる場所で一度押しておくと、圏外や機内モードでもこのページを開けます。'}</div></div>
+  ${INAPP?inAppHTML():`<div class="card"><button class="btn" id="saveBtn">当日の案内を保存</button>
+   <div class="saved" id="savedMsg">${sv?savedText(sv):'通信できる場所で一度押しておくと、圏外や機内モードでもこのページを開けます。'}</div></div>`}
   <div class="nav after"><a href="#results">リザルト</a><a href="#cert">記録証</a></div>
   ${pub?'':'<p class="muted" style="text-align:center">リザルトと記録証は、大会後に公開します</p>'}`;
-  $('#saveBtn').onclick=saveForOffline;wireBib();
+  const sb=$('#saveBtn');if(sb)sb.onclick=saveForOffline;wireBib();
 }
 async function saveForOffline(){
   const b=$('#saveBtn'),m=$('#savedMsg');b.disabled=true;m.textContent='保存しています…';
@@ -227,7 +241,7 @@ async function saveForOffline(){
     const sv={at:new Date().toISOString(),guideUpdatedAt:D.guide.updatedAt,noticesUpdatedAt:D.notices&&D.notices.updatedAt};
     LS.set('kq50-saved',sv);
     m.innerHTML=`<b>保存しました</b>（${fmt(sv.at)}。案内の最終更新 ${fmt(sv.guideUpdatedAt)}）<br>圏外でも、このページを開けば案内・地図を見られます。`;
-  }catch(e){m.innerHTML=`<span class="err">保存できませんでした：${esc(e.message)}。通信できる場所でもう一度押してください。</span>`}
+  }catch(e){m.innerHTML=!('serviceWorker' in navigator)?`<span class="err">このブラウザでは保存できません。${IS_ANDROID?'Chrome':'Safari'}で開き直してから保存してください。</span>`:`<span class="err">保存できませんでした：${esc(e.message)}。通信できる場所でもう一度押してください。</span>`}
   b.disabled=false;
 }
 /* ---- リザルト ---- */

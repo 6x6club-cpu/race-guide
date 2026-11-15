@@ -241,7 +241,13 @@ export async function setStart(catK, actualIso, reason, prev) {
 export async function getJoinCodes() { const { db } = firebase(); const s = await FB.getDoc(FB.doc(db, evPath('private/join'))); const d = s.exists() ? s.data() : {}; return { code: d.code || '', ckCode: d.ckCode || '', swCode: d.swCode || '' }; }
 /** k：'code'（計測担当の参加コード）／'ckCode'（受付用リンクのコード） */
 export async function setJoinCode(k, v) { const { db } = firebase(); await FB.setDoc(FB.doc(db, evPath('private/join')), { [k]: String(v) }, { merge: true }); }
-export const roleLink = (role, code) => new URL(`./?ev=${encodeURIComponent(EVENT_ID)}&${LINK_ROLES[role].param}=${encodeURIComponent(code)}`, location.href).href;
+// LINEで送ったときにLINEの中ではなくSafari／Chromeで開くよう openExternalBrowser=1 を付ける（LINEの公式の仕組み）
+export const roleLink = (role, code) => new URL(`./?ev=${encodeURIComponent(EVENT_ID)}&${LINK_ROLES[role].param}=${encodeURIComponent(code)}&openExternalBrowser=1`, location.href).href;
+/** アプリ内ブラウザ（LINEなど）：圏外で開き直す仕組み（Service Worker）が使えない */
+const UA = navigator.userAgent || '';
+export const INAPP = /\bLine\//i.test(UA) ? 'LINE' : /Instagram/i.test(UA) ? 'Instagram' : /FBAN|FBAV|FB_IAB/i.test(UA) ? 'Facebook' : /Twitter/i.test(UA) ? 'X（Twitter）' : (!('serviceWorker' in navigator) ? 'このアプリ' : '');
+export const IS_ANDROID = /Android/i.test(UA);
+export function externalURL() { const u = new URL(location.href); u.searchParams.set('openExternalBrowser', '1'); return u.href; }
 export async function setDeviceActive(uid, active) { const { db } = firebase(); await FB.updateDoc(FB.doc(db, evPath('devices/' + uid)), { active }); }
 
 export function errText(e) {

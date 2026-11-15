@@ -202,7 +202,7 @@ function render() {
   const [wc, wt] = whoText(); $('#who').className = 'pill ' + wc; $('#who').textContent = wt;
   $('#off').className = 'pill ' + (S.swReady ? 'on' : 'mid'); $('#off').textContent = S.swReady ? '圏外で起動できます' : '圏外の準備がまだ';
   const prep = !S.swReady || !reg;
-  $('#main').innerHTML = `
+  $('#main').innerHTML = `${C.INAPP ? inAppHTML(false) : ''}
   ${S.swUpdate ? `<div class="card"><b>新しい版があります。</b><div class="sub">計測の合間に、通信できる場所で更新してください。記録は消えません。</div><button class="btn wide" id="doUpd" style="margin-top:8px">更新する</button></div>` : ''}
   <details class="card" ${prep ? 'open' : ''}><summary>準備（通信できるときに）${prep ? '' : '　✓ 完了'}</summary>
     <div style="margin-top:8px"><b>1. 圏外で起動できるようにする</b>
@@ -288,10 +288,26 @@ async function exportCSV() {
 }
 
 /* ---------- 起動 ---------- */
+function inAppHTML(block) {
+  const br = C.IS_ANDROID ? 'Chrome' : 'Safari';
+  return `<div class="card" style="border:3px solid #f59e0b;background:#fffbeb"><b>${esc(C.INAPP)}の中で開いています</b>
+    <div style="margin:6px 0 10px">${block ? 'このままでは、圏外になったときにページを開き直せません。また、あとで' + br + 'で開くと別の端末として扱われます。' : '圏外になったときにページを開き直せません。'}<b>${br}で開いて使ってください。</b></div>
+    ${C.INAPP === 'LINE' ? `<a class="btn wide" style="display:block;text-align:center;text-decoration:none" href="${esc(C.externalURL())}">${br}で開く</a>` : ''}
+    <div class="sub" style="margin-top:8px">${C.INAPP === 'LINE' ? '開かないときは、' : ''}画面の右下（または右上）の「︙」や共有ボタン →「${C.IS_ANDROID ? '他のアプリで開く／ブラウザで開く' : 'Safariで開く'}」を選んでください。</div>
+    ${block ? '<button class="btn sec wide" id="stayInApp" style="margin-top:10px">このまま使う（おすすめしません）</button>' : ''}</div>`;
+}
 async function boot() {
   S.dev = await C.deviceId(); S.pt = await C.metaGet('pt', 'G1'); S.label = await C.metaGet('label', ''); S.clk = await C.metaGet('clk', null);
   S.evList = await C.loadEventList().catch(() => []);
   const qs = new URLSearchParams(location.search);
+  // リンク（受付・スイーパー）をLINEなどのアプリ内で開いたときは、登録する前にSafari／Chromeへ誘導する
+  const hasLink = Object.values(C.LINK_ROLES).some(L => qs.get(L.param));
+  let stay = false; try { stay = sessionStorage.getItem('stayInApp') === '1'; } catch (e) {}
+  if (C.INAPP && hasLink && !stay) {
+    $('#main').innerHTML = inAppHTML(true);
+    $('#stayInApp').onclick = () => { try { sessionStorage.setItem('stayInApp', '1'); } catch (e) {} location.reload(); };
+    return;
+  }
   const evId = qs.get('ev') || await C.metaGet('ev', C.DEFAULT_EVENT);
   // 受付用リンク（?ev=…&ck=コード）：コードを端末に控えてURLから消す
   for (const [role, L] of Object.entries(C.LINK_ROLES)) if (qs.get(L.param)) { await C.metaSet('linkjoin:' + evId, { role, code: qs.get(L.param) }); history.replaceState(null, '', location.pathname); }
