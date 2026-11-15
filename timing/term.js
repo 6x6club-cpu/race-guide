@@ -305,6 +305,10 @@ async function boot() {
   await useEvent(evId);
   try { C.onUser(async u => { S.user = u; S.userKnown = true; await useEvent(C.EVENT_ID); }); } catch (e) { S.userKnown = true; render(); }
   addEventListener('online', () => useEvent(C.EVENT_ID)); addEventListener('offline', () => { watchRemote(); render(); });
-  setInterval(sync, 15000);
+  setInterval(async () => {
+    // 本部で停止された端末は、通信できるときに再開されたか確かめる（再開されていれば送信を再開）
+    if (S.device && S.device.active === false && navigator.onLine && S.user && !isAdmin()) { const d = await C.myDevice(); if (d && d.active !== false) { S.device = { ...S.device, active: true }; await C.metaSet('device:' + C.EVENT_ID, S.device); watchRemote(); render(); } }
+    sync();
+  }, 15000);
 }
 boot();
