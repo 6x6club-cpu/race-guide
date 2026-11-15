@@ -1,6 +1,6 @@
 /* 計測端末：一度保存すれば、圏外・機内モードでもページを開き直せる。
    版ごとに保存し直す（版が変わっても、計測中に勝手には切り替えない：画面の「更新する」で切り替え） */
-const CACHE = 'timing-02754a1';
+const CACHE = 'timing-c107963';
 const FILES = ['./', 'index.html', 'term.js', 'common.js', 'hq.html', 'hq.js', 'manifest.json', 'icon-192.png', 'icon-512.png',
   'vendor/firebase.js', 'vendor/jsqr.js', 'vendor/qrcode.js', 'events/index.json', 'events/test-kq50.json', 'events/kq50-2026.json'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' }))))));
@@ -12,6 +12,11 @@ self.addEventListener('message', e => { if (e.data === 'skipWaiting') self.skipW
 self.addEventListener('fetch', e => {
   const req = e.request; if (req.method !== 'GET') return;
   const url = new URL(req.url); if (url.origin !== location.origin) return;
+  // 本部画面は通信できる場所で使うので、いつも最新を取りにいく（取れないときだけ保存した版）
+  if (/\/hq(\.html|\.js)?$/.test(url.pathname)) {
+    e.respondWith(fetch(req, { cache: 'no-store' }).catch(async () => (await (await caches.open(CACHE)).match(req, { ignoreSearch: true })) || Response.error()));
+    return;
+  }
   e.respondWith((async () => {
     const c = await caches.open(CACHE);
     let hit = await c.match(req, { ignoreSearch: true });
