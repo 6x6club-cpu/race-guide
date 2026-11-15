@@ -10,7 +10,7 @@ const isAdmin = () => !!(S.user && !S.user.isAnonymous);
 const canSend = () => !!(S.user && (isAdmin() || (S.device && S.device.active !== false)));
 /** 受付専用の端末（受付用リンクで登録）：記録できるのは受付だけ */
 const isCkOnly = () => !isAdmin() && ((S.device && S.device.role === 'ck') || (!S.device && !!S.ckPending));
-const points = () => (S.ev ? S.ev.points : []).filter(p => !isCkOnly() || p.k === 'CK');
+const points = () => (S.ev ? S.ev.points : []).filter(p => !isCkOnly() || (S.ev.ckPoints || ['CK']).includes(p.k));
 
 /* ---------- 音と画面の合図（圏外でも鳴る） ---------- */
 let ac = null;
@@ -25,7 +25,6 @@ function beep(ok) {
 }
 
 /* ---------- 記録 ---------- */
-function bibOf(raw) { const m = String(raw).match(/\d{1,5}/); return m ? String(+m[0]) : null; }
 /** この端末と本部（ほかの端末）の記録を合わせた、取り消されていない記録 */
 function liveAll() {
   const byId = new Map(); [...S.remote, ...S.recs].forEach(r => byId.set(r.id, r));
@@ -33,13 +32,22 @@ function liveAll() {
   return all.filter(r => r.pt !== 'VOID' && !vo.has(r.id));
 }
 async function record(raw, how) {
-  if (isCkOnly()) S.pt = 'CK';
-  const bib = bibOf(raw);
+  if (isCkOnly() && !points().find(p => p.k === S.pt)) S.pt = 'CK';
+  const bib = C.bibOf(raw);
   if (!bib) { S.msg = `番号を読み取れませんでした（${esc(String(raw).slice(0, 40))}）`; beep(false); render(); return; }
-  const warn = [];
-  if (S.ev && !S.ev.bibs.includes(+bib)) warn.push('名簿にない番号');
-  const prev = liveAll().filter(r => r.bib === bib && r.pt === S.pt);
-  if (prev.length) warn.push(`${S.pt === 'CK' ? '受付済み' : 'この地点で記録済み'}（${prev.map(r => hms(r.t) + (r.dev !== S.dev ? ' ' + (r.label || r.dev) : '')).join('、')}）`);
+  const warn = [], pac = C.isPacer(bib), live = liveAll(), who = r => hms(r.t) + (r.dev !== S.dev ? ' ' + (r.label || r.dev) : '');
+  if (!C.knownBib(S.ev, bib)) warn.push(pac ? '名簿にないペーサー番号' : '名簿にない番号');
+  const st = C.peopleState(live)[bib] || {};
+  if (S.pt === 'PO' || S.pt === 'PI') {
+    if (!pac) warn.push('ペーサーの番号ではありません（選手はペーサー出発・戻りを記録しません）');
+    else if (S.pt === 'PO') { if (!st.ck) warn.push('受付していないペーサーです'); if (st.out) warn.push(`すでにコースに出ています（${who(st.lastOut)} 出発）`); }
+    else if (!st.out) warn.push('出発の記録がありません');
+  } else {
+    if (pac && S.pt !== 'CK') warn.push('ペーサーは計測しません（ペーサー出発・戻りで記録してください）');
+    const prev = live.filter(r => r.bib === bib && r.pt === S.pt);
+    if (prev.length) warn.push(`${S.pt === 'CK' ? '受付済み' : 'この地点で記録済み'}（${prev.map(who).join('、')}）`);
+    if ((S.pt === 'G1' || S.pt === 'GF' || S.pt === 'DN') && !pac && !st.ck) warn.push('受付の記録がありません');
+  }
   await save({ bib, pt: S.pt, t: new Date().toISOString(), how, raw: String(raw).slice(0, 200), warn, label: S.label });
 }
 async function save(r) {
@@ -203,10 +211,11 @@ function render() {
         ${isAdmin() ? `<button class="btn sec wide" id="doOut" style="margin-top:6px">ログアウト</button>` : `<button class="btn sec wide" id="doIn" style="margin-top:6px" ${navigator.onLine ? '' : 'disabled'}>Googleでログイン</button>`}
         <div class="err" id="inMsg"></div></details></div>
   </details>
-  <div class="card">${isCkOnly() ? '<h3>受付（受付済みにする）</h3><div class="sub">選手のスマホの番号画面のQR、または番号を入力してください。</div>' : '<h3>いま記録する地点</h3>'}<div class="pts" ${isCkOnly() ? 'style="display:none"' : ''}>${points().map(p => `<button class="pt ${S.pt === p.k ? 'sel' : ''}" data-pt="${p.k}">${esc(p.label)}<small>${esc(p.sub || '')}</small></button>`).join('')}</div>
+  <div class="card">${isCkOnly() ? '<h3>受付（受付専用の端末）</h3><div class="sub">選手・ペーサーのスマホの番号画面のQR、または番号（ペーサーは P-23 のように）を入れてください。</div>' : '<h3>いま記録する地点</h3>'}<div class="pts" style="margin-top:8px">${points().map(p => `<button class="pt ${S.pt === p.k ? 'sel' : ''}" data-pt="${p.k}">${esc(p.label)}<small>${esc(p.sub || '')}</small></button>`).join('')}</div>
     <div class="cam ${S.cam ? 'show' : ''}"><video id="cv" playsinline muted></video><div class="lbl">${esc(ptLabel(S.pt))}</div></div>
     <div class="row"><button class="btn ${S.cam ? 'sec' : ''}" id="doCam">${S.cam ? 'カメラを止める' : 'QRを読む'}</button>
-      <input id="bib" inputmode="numeric" pattern="[0-9]*" placeholder="番号" autocomplete="off"><button class="btn" id="doRec">記録</button></div>
+      <button class="btn sec" id="doP" title="ペーサー番号を入れる">P</button><input id="bib" inputmode="numeric" pattern="[0-9]*" placeholder="番号" autocomplete="off"><button class="btn" id="doRec">記録</button></div>
+    <div class="sub" style="margin-top:4px">ペーサーは「P」を押してから番号（P-17-1 は 17.1）</div>
     ${S.msg ? `<div class="warn">${S.msg}</div>` : ''}</div>
   <div id="lastBox"></div>
   <div class="card"><div class="counts" id="counts"></div>
@@ -218,6 +227,7 @@ function render() {
   $$('[data-pt]').forEach(b => b.onclick = async () => { S.pt = b.dataset.pt; await C.metaSet('pt', S.pt); render(); });
   $('#doCam').onclick = () => S.cam ? camOff() : camOn();
   const go = async () => { const v = $('#bib').value.trim(); if (v) { $('#bib').value = ''; await record(v, '手入力'); const i = $('#bib'); if (i) i.focus(); } };
+  $('#doP').onclick = () => { const i = $('#bib'); i.setAttribute('inputmode', 'decimal'); i.removeAttribute('pattern'); i.value = 'P'; i.focus(); };
   $('#doRec').onclick = go; $('#bib').onkeydown = e => { if (e.key === 'Enter') go(); };
   $('#doSend').onclick = () => sync();
   $('#doCSV').onclick = exportCSV;
@@ -234,7 +244,8 @@ function renderLast() {
   const el = $('#lastBox'); if (!el) return;
   const r = S.recs.find(x => x.id === S.last); if (!r) { el.innerHTML = ''; return; }
   const voided = C.voidedIds(S.recs).has(r.id), c = C.catOf(S.ev, r.bib), g = goalOf(r);
-  const head = r.pt === 'CK' ? ((r.warn || []).length ? '受付：要確認' : '受付OK') : ptLabel(r.pt);
+  const ok = !(r.warn || []).length;
+  const head = r.pt === 'CK' ? (ok ? '受付OK' : '受付：要確認') : r.pt === 'PO' ? 'ペーサー出発（コースへ）' : r.pt === 'PI' ? 'ペーサー戻り（終了）' : r.pt === 'DN' ? 'リタイア（下山確認）' : ptLabel(r.pt);
   el.innerHTML = `<div class="card last ${voided ? 'voided' : r.status}"><div class="sub">直前の記録　${esc(r.id)}</div>
     <div class="bib">No.${esc(r.bib)}</div><div class="pl">${esc(head)}${c ? `　<span class="cat">${esc(c.label)}</span>` : ''}</div>
     <div class="tm">${hms(r.t)}${g != null ? `　<b>ゴールタイム ${dur(g)}</b>` : ''}</div>

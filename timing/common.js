@@ -31,7 +31,32 @@ export const dur = ms => { if (ms == null || isNaN(ms)) return '—'; if (ms < 0
 /* ---------- 大会の設定 ---------- */
 export async function loadEvent(id) { const r = await fetch('events/' + id + '.json'); if (!r.ok) throw new Error('大会の設定を読めません'); return r.json(); }
 export async function loadEventList() { const r = await fetch('events/index.json'); return r.ok ? r.json() : []; }
-export const catOf = (ev, bib) => ev && ev.cats.find(c => +bib >= c.from && +bib <= c.to) || null;
+export const isPacer = bib => /^P-/.test(String(bib));
+export const PACER_CAT = { k: 'P', label: 'ペーサー' };
+export const catOf = (ev, bib) => isPacer(bib) ? PACER_CAT : (ev && ev.cats.find(c => +bib >= c.from && +bib <= c.to) || null);
+/** 読み取った文字から番号を取り出す：ペーサーは P-23 / P-17-1、選手は数字 */
+export function bibOf(raw) {
+  const s = String(raw).normalize('NFKC').toUpperCase().replace(/\s/g, '');
+  // 「P23」「P-17-1」だけの文字、または文中の「P-23」（直前が英字でない）をペーサーとみなす
+  // 手入力では「P17.1」も P-17-1 とみなす（数字キーボードに - がないため）
+  const p = s.match(/^P-?(\d{1,4}(?:[-.]\d{1,2})?)$/) || s.match(/(?:^|[^A-Z])P-(\d{1,4}(?:-\d{1,2})?)(?!\d)/); if (p) return 'P-' + p[1].replace('.', '-').replace(/^0+(?=\d)/, '');
+  const m = s.match(/\d{1,5}/); return m ? String(+m[0]) : null;
+}
+export const knownBib = (ev, bib) => !ev ? true : isPacer(bib) ? (ev.pacers || []).includes(bib) : ev.bibs.includes(+bib);
+/** 人ごとの状態（取り消されていない記録から）：受付・コース上・フィニッシュ・リタイア */
+export function peopleState(live) {
+  const st = {}; const g = b => st[b] || (st[b] = { bib: b, ck: null, out: false, lastOut: null, lastIn: null, outs: 0, gf: null, dn: null, g1: null });
+  [...live].sort((a, b) => Date.parse(a.t) - Date.parse(b.t)).forEach(r => {
+    const x = g(r.bib);
+    if (r.pt === 'CK') { if (!x.ck) x.ck = r; }
+    else if (r.pt === 'PO') { x.out = true; x.lastOut = r; x.outs++; }
+    else if (r.pt === 'PI') { x.out = false; x.lastIn = r; }
+    else if (r.pt === 'GF') { if (!x.gf) x.gf = r; }
+    else if (r.pt === 'DN') { if (!x.dn) x.dn = r; }
+    else if (r.pt === 'G1') { if (!x.g1) x.g1 = r; }
+  });
+  return st;
+}
 /** 部門のスタート時刻：本部が直した時刻があればそれ、なければ予定時刻 */
 export const startOf = (ev, starts, catK) => { const s = starts && starts[catK]; if (s && s.actual) return s.actual; const c = ev && ev.cats.find(x => x.k === catK); return c ? c.start : null; };
 

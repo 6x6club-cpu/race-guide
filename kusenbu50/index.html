@@ -38,7 +38,7 @@ canvas.cert{width:100%;border:1px solid var(--line);border-radius:6px;margin:10p
 #bigbib .chip{display:inline-block;background:#fff;color:var(--acc);border-radius:999px;padding:8px 18px;font-size:20px;font-weight:800;margin:4px}
 #bigbib .who{font-size:clamp(26px,8vw,40px);font-weight:900;line-height:1.25;margin:0 0 14px;word-break:break-all}#bigbib .who small{font-size:.6em;font-weight:700;margin-left:.2em}#bigbib .pk{font-size:15px;font-weight:700;background:rgba(255,255,255,.16);border-radius:10px;padding:8px 12px;margin:10px auto 0;max-width:420px;line-height:1.5}
 .mybib .who{font-size:22px;font-weight:900;line-height:1.3;word-break:break-all}.mybib .who small{font-size:.65em;margin-left:.2em}.mybib .pk{font-size:13px;color:#fff;background:rgba(255,255,255,.16);border-radius:8px;padding:5px 8px;margin:6px auto 2px;display:inline-block}
-#bigbib{justify-content:flex-start}#bigbib>:first-child{margin-top:auto}#bigbib>:last-child{margin-bottom:auto}#bigbib .n{font-size:min(36vw,260px)}#bigbib .n.s{font-size:min(26vw,190px)}
+#bigbib{justify-content:flex-start}#bigbib>:first-child{margin-top:auto}#bigbib>:last-child{margin-bottom:auto}#bigbib .n{font-size:min(36vw,260px)}#bigbib .n.s{font-size:min(26vw,190px)}#bigbib .n.xs{font-size:min(19vw,140px);white-space:nowrap}
 #bigbib .qr{background:#fff;border-radius:14px;padding:10px;margin:14px auto 0;width:min(52vw,210px)}#bigbib .qr svg{display:block;width:100%;height:auto}#bigbib .qrl{font-size:13px;color:#e2d9f3;margin-top:6px}
 #bigbib .say{font-size:18px;margin:18px 0 22px;line-height:1.5}#bigbib .x{background:#fff;color:var(--acc);border:0;border-radius:12px;padding:14px 40px;font-size:18px;font-weight:800}
 #bigbib .cand{border-top:1px solid rgba(255,255,255,.35);padding:10px 0;width:100%;max-width:420px}
@@ -138,7 +138,7 @@ function normName(s){
   if(/^[A-Z]+$/.test(s)){s=s.replace(/MB/g,'NB').replace(/MP/g,'NP').replace(/OU|OO|OH(?![AIUEO])/g,'O').replace(/UU/g,'U')}
   return s;
 }
-function bibInfo(bib){const r=((D.bibs&&D.bibs.rules)||[]).find(x=>bib>=x.from&&bib<=x.to);return r||{}}
+function bibInfo(bib){const r=((D.bibs&&D.bibs.rules)||[]).find(x=>x.prefix?String(bib).startsWith(x.prefix):(typeof bib==='number'&&bib>=x.from&&bib<=x.to));return r||{}}
 /* 正式表記は「正しい名前を入れた人だけが読める」よう暗号化してある（鍵は入力した名前から作る） */
 async function openName(enc,k){
   try{const b=Uint8Array.from(atob(enc.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
@@ -159,7 +159,7 @@ const whoHTML=n=>n?`<div class="who">${esc(n)}<small>さん</small></div>`:'';
 function showBig(list){
   const one=list.length===1,name=list[0]&&list[0].name;
   const el=document.createElement('div');el.id='bigbib';el.setAttribute('role','dialog');
-  el.innerHTML=one?(()=>{const b=list[0].bib,i=bibInfo(b);return `${whoHTML(name)}<div class="l">あなたのゼッケン番号</div><div class="n${String(b).length>2?' s':''}">${b}</div>
+  el.innerHTML=one?(()=>{const b=list[0].bib,i=bibInfo(b);return `${whoHTML(name)}<div class="l">あなたのゼッケン番号</div><div class="n${String(b).length>4?' xs':String(b).length>2?' s':''}">${b}</div>
     <div>${i.cat?`<span class="chip">${esc(i.cat)}</span>`:''}${i.parkLabel?`<span class="chip">${esc(i.parkLabel)}</span>`:''}</div>${i.parkLabel?`<div class="pk">${PKNOTE}</div>`:''}${qrHTML(b)}
     <div class="say">受付と駐車場の入口で、<br>この画面をスタッフに見せてください</div>`})()
     :whoHTML(name)+`<div class="l">同じお名前の方が${list.length}人います</div>`+list.map(x=>{const b=x.bib,i=bibInfo(b);return `<div class="cand"><div class="n s" style="font-size:min(22vw,120px);margin:0">${b}</div><span class="chip" style="font-size:15px">${esc(i.cat||'')}</span><span class="chip" style="font-size:15px">${esc(i.parkLabel||'')}</span></div>`}).join('')+`<div class="pk">${PKNOTE}</div><div class="say">受付と駐車場の入口で、この画面と<br>お名前をスタッフにお伝えください</div>`;
@@ -185,7 +185,7 @@ function wireBib(){
   if(go){const run=async()=>{const v=$('#bname').value.trim(),m=$('#bmsg');if(!v){m.innerHTML='<div class="err">お名前を入れてください</div>';return}
       const list=await lookupBib(v);
       if(!list.length){m.innerHTML=`<div class="err">見つかりませんでした。<br>・姓と名をどちらも入れてください<br>・漢字の字体が違うと見つからないことがあります。カタカナかローマ字でもお試しください<br>・見つからないときは、受付でお名前をお伝えください</div>`;return}
-      const name=list[0].name;LS.set('kq50-me',{list,name,at:new Date().toISOString()});if(list.length===1)LS.set('kq50-bib',String(list[0].bib));showBig(list)};
+      const name=list[0].name;LS.set('kq50-me',{list,name,at:new Date().toISOString()});if(list.length===1&&typeof list[0].bib==='number')LS.set('kq50-bib',String(list[0].bib));showBig(list)};
     go.onclick=run;$('#bname').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();run()}})}
   const my=$('#myBib');if(my)my.onclick=()=>showBig(LS.get('kq50-me',{list:[]}).list);
   const rs=$('#bibReset');if(rs)rs.onclick=()=>{try{localStorage.removeItem('kq50-me')}catch(e){}render();setTimeout(()=>$('#bname')&&$('#bname').focus(),0)};

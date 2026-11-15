@@ -28,7 +28,7 @@ function render0() {
   }
   const { vo, live, cnt, key } = derived();
   const fromCache = S.meta && S.meta.fromCache;
-  const tabs = [['ck', '受付'], ['start', 'スタート時刻'], ['rec', '記録・ゴールタイム'], ['dev', '参加コード・端末'], ['csv', 'CSV']];
+  const tabs = [['ck', '受付'], ['course', 'コース上の人'], ['start', 'スタート時刻'], ['rec', '記録・ゴールタイム'], ['dev', '参加コード・端末'], ['csv', 'CSV']];
   m.innerHTML = `
   <div class="card"><div class="row" style="justify-content:space-between">
     <div class="row"><select id="evSel">${S.evList.map(e => `<option value="${esc(e.id)}" ${e.id === C.EVENT_ID ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
@@ -37,7 +37,7 @@ function render0() {
     ${S.err ? `<div class="err">${esc(S.err)}</div>` : ''}
     <div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div></div>
   <div id="body"></div>`;
-  $('#body').innerHTML = ({ ck: ckHTML, start: startHTML, rec: recHTML, dev: devHTML, csv: csvHTML }[S.tab])(live, vo, cnt, key);
+  $('#body').innerHTML = ({ ck: ckHTML, course: courseHTML, start: startHTML, rec: recHTML, dev: devHTML, csv: csvHTML }[S.tab])(live, vo, cnt, key);
   $('#out').onclick = () => C.logout();
   $('#evSel').onchange = e => useEvent(e.target.value);
   $$('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); });
@@ -47,13 +47,37 @@ function render0() {
 function ckHTML(live) {
   const ck = new Map(); live.filter(r => r.pt === 'CK').forEach(r => { if (!ck.has(r.bib) || Date.parse(r.t) < Date.parse(ck.get(r.bib).t)) ck.set(r.bib, r); });
   const by = {}; live.filter(r => r.pt === 'CK').forEach(r => by[r.label || r.dev] = (by[r.label || r.dev] || 0) + 1);
-  return S.ev.cats.map(c => {
-    const all = S.ev.bibs.filter(b => b >= c.from && b <= c.to); const done = all.filter(b => ck.has(String(b))); const not = all.filter(b => !ck.has(String(b)));
+  const groups = [...S.ev.cats.map(c => ({ ...c, all: S.ev.bibs.filter(b => b >= c.from && b <= c.to) })), { k: 'P', label: 'ペーサー', all: S.ev.pacers || [] }];
+  return groups.map(c => {
+    const all = c.all; const done = all.filter(b => ck.has(String(b))); const not = all.filter(b => !ck.has(String(b)));
     return `<div class="card"><h3>${esc(c.label)}　受付済み <b>${done.length}</b> ／ ${all.length}人　<span class="sub">未受付 ${not.length}人</span></h3>
       <div class="bar"><i style="width:${all.length ? done.length / all.length * 100 : 0}%"></i></div>
-      <div class="sub" style="margin-top:8px">未受付（スタート時点で未受付ならDNS候補）</div><div class="chips">${not.map(b => `<span class="chip">${b}</span>`).join('') || '<span class="sub">なし</span>'}</div>
+      <div class="sub" style="margin-top:8px">${c.k === 'P' ? '未受付のペーサー' : '未受付（スタート時点で未受付ならDNS候補）'}</div><div class="chips">${not.map(b => `<span class="chip">${b}</span>`).join('') || '<span class="sub">なし</span>'}</div>
       <details style="margin-top:8px"><summary class="sub">受付済み ${done.length}人</summary><div class="chips">${done.map(b => { const r = ck.get(String(b)); return `<span class="chip ok" title="${esc(r.label || r.dev)} ${hms(r.t)}">${b}<small>${hm(r.t)}</small></span>`; }).join('')}</div></details></div>`;
   }).join('') + `<div class="card sub">受付の担当ごとの件数：${Object.entries(by).map(([k, n]) => `${esc(k)} ${n}件`).join('、') || 'まだありません'}</div>`;
+}
+/* ---- コース上の人（安全の把握） ---- */
+function courseHTML(live) {
+  const st = C.peopleState(live); const now = Date.now(); const cut = S.ev.cutoff ? Date.parse(S.ev.cutoff) : null; const late = cut && now > cut;
+  const started = c => { const t = C.startOf(S.ev, S.starts, c.k); return t && now >= Date.parse(t); };
+  const runners = S.ev.cats.flatMap(c => S.ev.bibs.filter(b => b >= c.from && b <= c.to).map(b => ({ b: String(b), c, x: st[String(b)] || {} })));
+  const onCourse = runners.filter(r => r.x.ck && !r.x.gf && !r.x.dn && started(r.c));
+  const waiting = runners.filter(r => r.x.ck && !r.x.gf && !r.x.dn && !started(r.c));
+  const fin = runners.filter(r => r.x.gf), dn = runners.filter(r => r.x.dn), dns = runners.filter(r => !r.x.ck);
+  const pac = (S.ev.pacers || []).map(b => ({ b, x: st[b] || {} }));
+  const pOut = pac.filter(p => p.x.out), pDone = pac.filter(p => p.x.ck && !p.x.out && p.x.outs), pWait = pac.filter(p => p.x.ck && !p.x.outs), pNo = pac.filter(p => !p.x.ck);
+  const runnerOf = b => b.replace(/^P-/, '').split('-')[0];
+  const chip = (b, cls, sub) => `<span class="chip ${cls}">${esc(b)}${sub ? `<small>${esc(sub)}</small>` : ''}</span>`;
+  return `<div class="card"><div class="kpi">
+      <div><b style="color:${onCourse.length + pOut.length ? 'var(--wait)' : 'var(--ok)'}">${onCourse.length + pOut.length}</b>いまコース上（選手${onCourse.length}・ペーサー${pOut.length}）</div>
+      <div><b>${fin.length}</b>フィニッシュ</div><div><b>${dn.length}</b>リタイア</div><div><b>${dns.length}</b>未受付（DNS候補）</div></div>
+    ${late && onCourse.length + pOut.length ? `<div class="err" style="margin-top:8px;font-weight:800">最終関門（${hm(S.ev.cutoff)}）を過ぎています。コース上に残っている人を確認してください。</div>` : ''}
+    <p class="sub">コース上の選手＝受付済みで、スタート後、フィニッシュもリタイアもしていない人。ペーサー＝最後の記録が「ペーサー出発」の人。</p></div>
+  <div class="card"><h3>コース上のペーサー（${pOut.length}人）</h3><div class="chips">${pOut.map(p => chip(p.b, late ? 'bad' : 'w', `No.${runnerOf(p.b)}と ${hm(p.x.lastOut.t)}〜`)).join('') || '<span class="sub">いません</span>'}</div>
+    <p class="sub">戻った（終了・交代）：${pDone.map(p => `${esc(p.b)}（${hm(p.x.lastIn.t)}）`).join('、') || 'なし'}　／　受付済み・まだ出発していない：${pWait.map(p => esc(p.b)).join('、') || 'なし'}　／　未受付：${pNo.map(p => esc(p.b)).join('、') || 'なし'}</p></div>
+  <div class="card"><h3>コース上の選手（${onCourse.length}人）</h3><div class="chips">${onCourse.map(r => chip(r.b, late ? 'bad' : 'w', r.x.g1 ? '1周目済' : '')).join('') || '<span class="sub">いません</span>'}</div>
+    ${waiting.length ? `<p class="sub">受付済み・スタート前：${waiting.map(r => esc(r.b)).join('、')}</p>` : ''}
+    <p class="sub">リタイア：${dn.map(r => `${esc(r.b)}（${hm(r.x.dn.t)}）`).join('、') || 'なし'}</p></div>`;
 }
 /* ---- スタート時刻 ---- */
 function startHTML() {
@@ -172,6 +196,7 @@ async function useEvent(id) {
   }
   render();
 }
+setInterval(() => { if (S.tab === 'course' && !S.editStart) render(); }, 60000);
 (async () => {
   S.evList = await C.loadEventList().catch(() => []);
   let id = new URLSearchParams(location.search).get('ev'); try { id = id || localStorage.getItem('hq-ev'); } catch (e) {}
