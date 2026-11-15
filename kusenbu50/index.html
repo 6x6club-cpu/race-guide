@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f2a24">
+<title>KUSENBU QUEST 50 大会案内</title>
+<link rel="manifest" href="manifest.json">
+<style>
+:root{--ink:#1d1d1b;--sub:#66665f;--line:#deddd6;--bg:#f6f5f0;--card:#fff;--acc:#1f5e3b;--w:#b45309;--red:#b91c1c}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;font:16px/1.65 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;color:var(--ink);background:var(--bg)}
+header{background:#1f2a24;color:#fff;padding:14px 16px 12px}header .t{font-size:20px;font-weight:800;letter-spacing:.02em}header .d{color:#cfd8d2;font-size:14px}
+.st{font-size:12.5px;padding:7px 16px;background:#e9efe9;color:#24442f;border-bottom:1px solid var(--line)}.st.off{background:#fff3d6;color:#7c4a03}
+main{max-width:640px;margin:0 auto;padding:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:0 0 12px}
+.notice{border-radius:12px;padding:12px 14px;margin:0 0 10px;border:2px solid var(--red);background:#fff5f5}.notice .h{font-weight:800;color:var(--red);font-size:13px}.notice.n{border:1px solid var(--line);background:#fff}.notice.n .h{color:var(--sub)}
+.notice .tm{font-size:12px;color:var(--sub)}
+.sum dt{font-size:12.5px;color:var(--sub);margin-top:10px}.sum dt:first-child{margin-top:0}.sum dd{margin:0;font-weight:700;font-size:16.5px}.sum dd small{display:block;font-weight:400;font-size:13.5px;color:var(--sub)}
+.links a{display:inline-block;margin:6px 6px 0 0;font-size:14px;color:var(--acc)}
+.nav{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 12px}.nav a{display:block;text-align:center;background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 6px;font-weight:700;color:var(--ink);text-decoration:none;font-size:16px}
+.nav.after a{background:#f0f5f1;border-color:#bfd3c5}
+.btn{display:block;width:100%;background:var(--acc);color:#fff;border:0;border-radius:10px;padding:14px;font-size:16px;font-weight:700;cursor:pointer}.btn.sec{background:#fff;color:var(--ink);border:1px solid var(--line)}.btn:disabled{opacity:.5}
+.saved{font-size:13.5px;margin-top:8px}.saved b{color:var(--acc)}
+.sec h2{font-size:17px;margin:18px 0 6px;border-left:4px solid var(--acc);padding-left:8px}.sec h2:first-child{margin-top:0}.sec ul{margin:0;padding-left:1.2em}.sec li{margin:3px 0}.sec img{width:100%;border-radius:8px;margin:8px 0;border:1px solid var(--line)}.sec p{margin:6px 0}
+.tbd{color:var(--w);font-weight:700}
+.back{display:inline-block;margin:0 0 10px;color:var(--acc);text-decoration:none;font-size:15px}
+input{font:inherit;padding:12px;border:1px solid var(--line);border-radius:10px;width:100%;font-size:18px}
+.res .big{font-size:30px;font-weight:800}.res table{width:100%;border-collapse:collapse;font-size:14px}.res td,.res th{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left}
+.muted{color:var(--sub);font-size:13.5px}.err{color:var(--red);font-size:14px;margin-top:6px}
+canvas.cert{width:100%;border:1px solid var(--line);border-radius:6px;margin:10px 0}
+footer{font-size:12px;color:var(--sub);text-align:center;padding:16px}
+</style></head>
+<body>
+<header><div class="t">KUSENBU QUEST 50</div><div class="d" id="date">大会案内</div></header>
+<div class="st" id="st">読み込み中…</div>
+<main id="main"></main>
+<footer>大会本部（緊急連絡先）<span id="emg"></span><br>KUSENBU QUEST 50 実行委員会・7trails</footer>
+<script>
+'use strict';
+const RACE='kusenbu50',CACHE='kq50-guide-v1';
+const BASE_LIST=['./','index.html','manifest.json','data/guide.json','data/notices.json','data/results.json'];
+const imgList=()=>[...new Set(((D.guide&&D.guide.sections)||[]).flatMap(s=>[...String(s.body).matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map(m=>m[1])))];
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const fmt=iso=>{if(!iso)return '—';const d=new Date(iso);return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`};
+const D={guide:null,notices:null,results:null,src:{},fetchedAt:{}};
+
+/* データ：通信できれば最新、だめなら保存した版 */
+async function getJSON(name){
+  const url='data/'+name+'.json';
+  try{
+    const r=await fetch(url+'?t='+Date.now(),{cache:'no-store'});if(!r.ok)throw new Error(r.status);
+    const j=await r.json();if(r.headers.get('X-Saved-Copy')){D.src[name]='cache';return j}D.src[name]='net';D.fetchedAt[name]=new Date().toISOString();
+    // 保存済みなら控えも最新に入れ替える
+    if(LS.get('kq50-saved',null)&&'caches' in window){try{const c=await caches.open(CACHE);await c.put(url,new Response(JSON.stringify(j),{headers:{'Content-Type':'application/json'}}))}catch(e){}}
+    return j;
+  }catch(e){
+    if('caches' in window){const c=await caches.open(CACHE);const m=await c.match(url);if(m){D.src[name]='cache';return m.json()}}
+    D.src[name]='none';return null;
+  }
+}
+async function load(){
+  const [g,n,r]=await Promise.all(['guide','notices','results'].map(getJSON));
+  D.guide=g;D.notices=n;D.results=r;render();
+}
+function statusLine(){
+  const st=$('#st'),sv=LS.get('kq50-saved',null);
+  const on=D.src.notices==='net';
+  if(on){st.className='st';st.textContent=`最新の案内を表示中（${fmt(D.fetchedAt.notices)} 取得）`+(sv?` ・端末に保存済み`:'')}
+  else if(D.src.guide==='cache'){st.className='st off';st.textContent=`圏外のため、保存した版を表示中（案内の更新 ${fmt(D.guide&&D.guide.updatedAt)}／お知らせの更新 ${fmt(D.notices&&D.notices.updatedAt)}）`}
+  else{st.className='st off';st.textContent='通信できません。通信できる場所で開き直してください'}
+}
+/* 本文の書式：## 見出し / - 箇条 / ![説明](画像) / [文字](URL) / {要確認:…} */
+function md(body){
+  const tbd=s=>s.replace(/\{要確認:[^}]*\}/g,'<span class="tbd">（調整中）</span>');
+  const inl=s=>tbd(esc(s)).replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+  let h='',ul=false;
+  for(const line of String(body||'').split('\n')){
+    const l=line.trim();
+    if(!l.startsWith('- ')&&ul){h+='</ul>';ul=false}
+    if(!l)continue;
+    let m;
+    if(l.startsWith('## '))h+=`<h2>${inl(l.slice(3))}</h2>`;
+    else if(l.startsWith('- ')){if(!ul){h+='<ul>';ul=true}h+=`<li>${inl(l.slice(2))}</li>`}
+    else if((m=l.match(/^!\[([^\]]*)\]\(([^)]+)\)$/)))h+=`<img src="${esc(m[2])}" alt="${esc(m[1])}" loading="eager">`;
+    else h+=`<p>${inl(l)}</p>`;
+  }
+  if(ul)h+='</ul>';return h;
+}
+function noticesHTML(){
+  const n=D.notices;if(!n||!n.items)return '';
+  const items=n.items.filter(x=>!x.hidden).sort((a,b)=>(b.important-a.important)||Date.parse(b.at)-Date.parse(a.at));
+  return items.map(x=>`<div class="notice ${x.important?'':'n'}"><div class="h">${x.important?'重要なお知らせ':'お知らせ'}　<span class="tm">${fmt(x.at)}</span></div><div>${esc(x.text).replace(/\n/g,'<br>')}</div></div>`).join('');
+}
+function route(){return (location.hash||'#top').slice(1)}
+function render(){
+  statusLine();const g=D.guide;
+  if(!g){$('#main').innerHTML='<div class="card">案内を読み込めませんでした。通信できる場所で開いてください。</div>';return}
+  $('#date').textContent=g.date+'　大会案内';$('#emg').textContent='：'+g.emergency;
+  const v=route();window.scrollTo(0,0);
+  if(v==='top')return renderTop();
+  if(v==='results')return renderResults();
+  if(v==='cert')return renderCert();
+  const s=g.sections.find(x=>x.id===v);
+  if(s){$('#main').innerHTML=noticesHTML()+`<a class="back" href="#top">← 大会案内</a><div class="card sec"><h1 style="font-size:20px;margin:0 0 10px">${esc(s.title)}</h1>${md(s.body)}</div><a class="back" href="#top">← 大会案内</a>`;return}
+  renderTop();
+}
+function renderTop(){
+  const g=D.guide,sv=LS.get('kq50-saved',null);const pub=D.results&&D.results.published;
+  $('#main').innerHTML=noticesHTML()+`
+  <div class="card"><dl class="sum">${g.summary.map(x=>`<dt>${esc(x.k)}</dt><dd>${esc(x.v)}${x.sub?`<small>${esc(x.sub)}</small>`:''}${x.links?`<div class="links">${x.links.map(([t,u])=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}の地図</a>`).join('')}</div>`:''}</dd>`).join('')}</dl></div>
+  <div class="nav">${g.sections.map(s=>`<a href="#${s.id}">${esc(s.title)}</a>`).join('')}</div>
+  <div class="card"><button class="btn" id="saveBtn">当日の案内を保存</button>
+   <div class="saved" id="savedMsg">${sv?`<b>保存済み</b>（${fmt(sv.at)} に保存。案内の最終更新 ${fmt(sv.guideUpdatedAt)}）<br>圏外でも、このページを開けば案内・地図を見られます。`:'通信できる場所で一度押しておくと、圏外や機内モードでもこのページを開けます。'}</div></div>
+  <div class="nav after"><a href="#results">リザルト</a><a href="#cert">記録証</a></div>
+  ${pub?'':'<p class="muted" style="text-align:center">リザルトと記録証は、大会後に公開します</p>'}`;
+  $('#saveBtn').onclick=saveForOffline;
+}
+async function saveForOffline(){
+  const b=$('#saveBtn'),m=$('#savedMsg');b.disabled=true;m.textContent='保存しています…';
+  try{
+    if(!('serviceWorker' in navigator)||!('caches' in window))throw new Error('このブラウザは保存に対応していません');
+    await navigator.serviceWorker.register('sw.js');await navigator.serviceWorker.ready;
+    const c=await caches.open(CACHE);
+    const SAVE_LIST=[...BASE_LIST,...imgList()];
+    for(const u of SAVE_LIST){const r=await fetch(u+(u.startsWith('data/')?'?t='+Date.now():''),{cache:'reload'});if(!r.ok)throw new Error(u+' を取得できませんでした');await c.put(u,r)}
+    // すべて入ったか確かめる
+    for(const u of SAVE_LIST){if(!await c.match(u))throw new Error(u+' の保存を確認できませんでした')}
+    const sv={at:new Date().toISOString(),guideUpdatedAt:D.guide.updatedAt,noticesUpdatedAt:D.notices&&D.notices.updatedAt};
+    LS.set('kq50-saved',sv);
+    m.innerHTML=`<b>保存しました</b>（${fmt(sv.at)}。案内の最終更新 ${fmt(sv.guideUpdatedAt)}）<br>圏外でも、このページを開けば案内・地図を見られます。`;
+  }catch(e){m.innerHTML=`<span class="err">保存できませんでした：${esc(e.message)}。通信できる場所でもう一度押してください。</span>`}
+  b.disabled=false;
+}
+/* ---- リザルト ---- */
+function findRow(bib){const r=D.results;return r&&r.rows.find(x=>String(x.bib)===String(+bib))}
+function renderResults(){
+  const R=D.results;
+  if(!R||!R.published){$('#main').innerHTML=`<a class="back" href="#top">← 大会案内</a><div class="card">リザルトは大会後に公開します。</div>`;return}
+  $('#main').innerHTML=`<a class="back" href="#top">← 大会案内</a><div class="card res"><h2 style="margin:0 0 8px;font-size:18px">リザルト</h2>
+   <div class="muted">${esc(R.note||'')}（${fmt(R.updatedAt)} 確定）</div>
+   <input id="bib" inputmode="numeric" placeholder="ゼッケン番号" value="${esc(LS.get('kq50-bib',''))}" style="margin-top:10px"><div id="hit"></div></div>`;
+  const show=()=>{const v=$('#bib').value.trim();LS.set('kq50-bib',v);const x=v&&findRow(v);
+    $('#hit').innerHTML=!v?'':!x?'<div class="err">このゼッケン番号のリザルトはありません</div>':resultHTML(x)};
+  $('#bib').oninput=show;show();
+}
+function resultHTML(x){
+  const R=D.results;const cat=(R.cats&&R.cats[x.cat])||x.cat;
+  return `<div style="margin-top:12px"><div class="muted">No.${esc(x.bib)}　${esc(cat)}</div><div style="font-weight:700;font-size:18px">${esc(x.name||'（氏名非公開）')}</div>
+  <div class="big">${esc(x.time||x.status)}</div>
+  <table><tr><th>状態</th><td>${esc(x.status)}</td></tr>${x.rank?`<tr><th>総合順位</th><td>${x.rank}位</td></tr>`:''}${x.sexRank?`<tr><th>${x.sex==='女'?'女子':'男子'}順位</th><td>${x.sexRank}位</td></tr>`:''}</table>
+  ${x.splits&&x.splits.length?`<h3 style="font-size:15px;margin:12px 0 4px">区間タイムと順位の推移</h3><table><tr><th>地点</th><th>通過</th><th>区間</th><th>順位</th></tr>${x.splits.map(s=>`<tr><td>${esc(s.pt)}</td><td>${esc(s.at||'')}</td><td>${esc(s.seg||'')}</td><td>${s.rank?s.rank+'位':''}</td></tr>`).join('')}</table>`:''}
+  <p><a href="#cert">記録証をダウンロード</a></p></div>`;
+}
+/* ---- 記録証 ---- */
+async function sha256(s){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function renderCert(){
+  const R=D.results;
+  if(!R||!R.published){$('#main').innerHTML=`<a class="back" href="#top">← 大会案内</a><div class="card">記録証は大会後に公開します。</div>`;return}
+  $('#main').innerHTML=`<a class="back" href="#top">← 大会案内</a><div class="card"><h2 style="margin:0 0 8px;font-size:18px">記録証</h2>
+   <div class="muted">ゼッケン番号と、${esc(R.authLabel||'本人確認コード')}を入れてください。</div>
+   <input id="cbib" inputmode="numeric" placeholder="ゼッケン番号" value="${esc(LS.get('kq50-bib',''))}" style="margin-top:10px">
+   <input id="ccode" inputmode="numeric" placeholder="${esc(R.authLabel||'本人確認コード')}" style="margin-top:8px" autocomplete="off">
+   <button class="btn" id="cgo" style="margin-top:10px">確認する</button><div id="cmsg"></div><div id="cout"></div></div>`;
+  $('#cgo').onclick=async()=>{
+    const bib=$('#cbib').value.trim(),code=$('#ccode').value.trim(),x=findRow(bib);$('#cout').innerHTML='';
+    if(!x){$('#cmsg').innerHTML='<div class="err">このゼッケン番号のリザルトはありません</div>';return}
+    const h=await sha256(R.salt+'|'+(+bib)+'|'+code);
+    if(h!==x.auth){$('#cmsg').innerHTML=`<div class="err">${esc(R.authLabel||'本人確認コード')}が一致しません</div>`;return}
+    if(!x.time){$('#cmsg').innerHTML=`<div class="err">完走記録がないため、記録証は発行されません（${esc(x.status)}）</div>`;return}
+    $('#cmsg').innerHTML='';const cv=drawCert(x);$('#cout').appendChild(cv);
+    const b=document.createElement('button');b.className='btn';b.textContent='PDFをダウンロード';b.onclick=()=>downloadPDF(cv,`KUSENBU50_記録証_No${x.bib}.pdf`);$('#cout').appendChild(b);
+  };
+}
+function drawCert(x){
+  const R=D.results,W=1240,H=1754,cv=document.createElement('canvas');cv.width=W;cv.height=H;cv.className='cert';const g=cv.getContext('2d');
+  const F='"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif',S='"Hiragino Sans","Noto Sans JP",sans-serif';
+  g.fillStyle='#fff';g.fillRect(0,0,W,H);g.strokeStyle='#1f5e3b';g.lineWidth=6;g.strokeRect(60,60,W-120,H-120);g.lineWidth=2;g.strokeRect(80,80,W-160,H-160);
+  g.textAlign='center';g.fillStyle='#1f5e3b';g.font=`700 52px ${S}`;g.fillText('KUSENBU QUEST 50',W/2,240);
+  g.fillStyle='#1d1d1b';g.font=`700 96px ${F}`;g.fillText('記 録 証',W/2,400);
+  g.font=`40px ${S}`;g.fillText(`${(R.cats&&R.cats[x.cat])||x.cat}　No.${x.bib}`,W/2,540);
+  g.font=`700 84px ${F}`;g.fillText(x.name||'',W/2,680);
+  g.font=`40px ${S}`;g.fillStyle='#66665f';g.fillText('完走タイム',W/2,840);
+  g.fillStyle='#1d1d1b';g.font=`800 140px ${S}`;g.fillText(x.time,W/2,1000);
+  g.font=`44px ${S}`;g.fillText(`総合 ${x.rank}位${x.sexRank?`　${x.sex==='女'?'女子':'男子'} ${x.sexRank}位`:''}`,W/2,1110);
+  let y=1190;if(x.splits&&x.splits.length){g.font=`30px ${S}`;g.fillStyle='#444';for(const s of x.splits){g.fillText(`${s.pt}　${s.at||''}　${s.rank?s.rank+'位':''}`,W/2,y);y+=44}}
+  g.fillStyle='#1d1d1b';g.font=`34px ${F}`;g.fillText('あなたは上記の記録で完走したことを証します',W/2,Math.max(y+40,1360));
+  g.font=`32px ${S}`;g.fillText(R.dateLabel||'',W/2,1500);g.fillText('KUSENBU QUEST 50 実行委員会・7trails',W/2,1560);
+  g.font=`22px ${S}`;g.fillStyle='#888';g.fillText(R.sourceLabel||'',W/2,1640);
+  return cv;
+}
+/* 画像1枚のPDF（A4縦）を端末内で作る：フォントを持ち込まずに日本語を出せる */
+function downloadPDF(cv,name){
+  const jpg=atob(cv.toDataURL('image/jpeg',0.92).split(',')[1]);const W=595.28,H=841.89;
+  const parts=[];let len=0;const off=[];const add=s=>{parts.push(s);len+=s.length};
+  add('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+  const obj=(n,body)=>{off[n]=len;add(`${n} 0 obj\n`);add(body);add('\nendobj\n')};
+  obj(1,'<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2,'<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+  obj(3,`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
+  obj(4,`<< /Type /XObject /Subtype /Image /Width ${cv.width} /Height ${cv.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n${jpg}\nendstream`);
+  const c=`q ${W} 0 0 ${H} 0 0 cm /Im0 Do Q`;obj(5,`<< /Length ${c.length} >>\nstream\n${c}\nendstream`);
+  const x=len;add(`xref\n0 6\n0000000000 65535 f \n`+[1,2,3,4,5].map(n=>String(off[n]).padStart(10,'0')+' 00000 n \n').join(''));
+  add(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${x}\n%%EOF`);
+  const s=parts.join('');const u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i)&255;
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([u],{type:'application/pdf'}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);
+}
+window.addEventListener('hashchange',render);
+window.addEventListener('online',load);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&navigator.onLine)load()});
+setInterval(()=>{if(navigator.onLine)getJSON('notices').then(n=>{if(n){const ch=JSON.stringify(n)!==JSON.stringify(D.notices);D.notices=n;if(ch)render();else statusLine()}})},60000);
+if('serviceWorker' in navigator&&LS.get('kq50-saved',null))navigator.serviceWorker.register('sw.js').catch(()=>{});
+load();
+</script>
+</body></html>
