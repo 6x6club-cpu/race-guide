@@ -107,7 +107,7 @@ function gmapHTML(key){
   const g=(D.guide.maps||{})[key];
   if(!g||!g.embed)return `<div class="gmap-off"><b>会場の地図は準備中です</b></div>`;
   const btn=`<a class="btn gbtn${online()?'':' dis'}" href="${esc(g.route)}" target="_blank" rel="noopener">Googleマップで経路を開く</a>`;
-  if(!online())return `<div class="gmap-off"><b>Googleマップは通信できるときに表示されます</b><br>いまは圏外のため表示できません。下の概略図と徒歩の案内をご覧ください。</div>${btn}<div class="muted" style="margin:4px 0 10px">経路のボタンも通信できるときに使えます</div>`;
+  if(!online())return `<div class="gmap-off"><b>Googleマップは通信できるときに表示されます</b><br>いまは圏外のため表示できません。下の駐車場の案内図と徒歩の案内をご覧ください。</div>${btn}<div class="muted" style="margin:4px 0 10px">経路のボタンも通信できるときに使えます</div>`;
   return `<div class="gmap"><iframe src="${esc(g.embed)}" title="${esc(g.label||'会場の地図')}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe></div>${btn}<div class="muted" style="margin:4px 0 10px">地図：Google マップ（通信できるときに表示）</div>`;
 }
 function noticesHTML(){
