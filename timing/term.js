@@ -4,10 +4,13 @@ import * as C from './common.js';
 const { $, $$, esc, hms, dur, BUILD } = C;
 
 const S = { ev: null, evList: [], pt: 'G1', recs: [], remote: [], starts: {}, user: null, userKnown: false, device: null, dev: '', label: '',
-  cam: null, last: null, sending: false, sendErr: '', swReady: false, swUpdate: null, msg: '', clk: null, unsubs: [] };
+  ckPending: null, cam: null, last: null, sending: false, sendErr: '', swReady: false, swUpdate: null, msg: '', clk: null, unsubs: [] };
 const ptLabel = k => k === 'VOID' ? '取消' : ((S.ev && S.ev.points.find(p => p.k === k)) || { label: k }).label;
 const isAdmin = () => !!(S.user && !S.user.isAnonymous);
 const canSend = () => !!(S.user && (isAdmin() || (S.device && S.device.active !== false)));
+/** 受付専用の端末（受付用リンクで登録）：記録できるのは受付だけ */
+const isCkOnly = () => !isAdmin() && ((S.device && S.device.role === 'ck') || (!S.device && !!S.ckPending));
+const points = () => (S.ev ? S.ev.points : []).filter(p => !isCkOnly() || p.k === 'CK');
 
 /* ---------- 音と画面の合図（圏外でも鳴る） ---------- */
 let ac = null;
@@ -30,6 +33,7 @@ function liveAll() {
   return all.filter(r => r.pt !== 'VOID' && !vo.has(r.id));
 }
 async function record(raw, how) {
+  if (isCkOnly()) S.pt = 'CK';
   const bib = bibOf(raw);
   if (!bib) { S.msg = `番号を読み取れませんでした（${esc(String(raw).slice(0, 40))}）`; beep(false); render(); return; }
   const warn = [];
@@ -54,12 +58,18 @@ async function voidRec(id) {
 /* ---------- 本部へ送る ---------- */
 async function sync() {
   if (S.sending || !navigator.onLine || !canSend()) return;
-  const todo = S.recs.filter(r => r.status !== 'received');
+  const todo = S.recs.filter(r => r.status !== 'received' && r.status !== 'rejected');
   if (!todo.length) { S.sendErr = ''; return; }
   S.sending = true; renderCounts();
   try {
     for (const r of todo) {
-      const res = await C.sendRecord(r, { clk: S.clk });
+      let res;
+      try { res = await C.sendRecord(r, { clk: S.clk }); }
+      catch (e) {
+        // 権限で断られた記録は、送り直しても通らない。印を付けて次へ進む（CSVには残る）
+        if (e && e.code === 'permission-denied' && canSend()) { Object.assign(r, await C.updateRecord(r.id, { status: 'rejected', rejectedWhy: C.errText(e) })); continue; }
+        throw e;
+      }
       if (res.clk != null) { S.clk = res.clk; C.metaSet('clk', res.clk); }
       const nx = await C.updateRecord(r.id, { status: 'received', receivedAt: res.receivedAt, already: res.already });
       Object.assign(r, nx); S.sendErr = ''; renderList(); renderLast(); renderCounts();
@@ -125,16 +135,32 @@ async function useEvent(id) {
   S.starts = await C.metaGet('starts:' + id, {});
   const last = S.recs.filter(r => r.pt !== 'VOID').pop(); S.last = last && last.id;
   if (S.ev && !S.ev.points.find(p => p.k === S.pt)) S.pt = S.ev.points[0].k;
-  S.device = await C.metaGet('device:' + id, null);
-  if (S.user && S.user.isAnonymous && navigator.onLine) { const d = await C.myDevice(); if (d !== undefined) { S.device = d && { label: d.label, active: d.active }; await C.metaSet('device:' + id, S.device); } }
-  watchRemote(); render(); sync();
+  S.device = await C.metaGet('device:' + id, null); S.ckPending = await C.metaGet('ckjoin:' + id, null);
+  if (S.user && S.user.isAnonymous && navigator.onLine) { const d = await C.myDevice(); if (d !== undefined) { S.device = d && { label: d.label, active: d.active, role: d.role || 'timer' }; await C.metaSet('device:' + id, S.device); } }
+  if (isCkOnly()) S.pt = 'CK';
+  watchRemote(); render();
+  await autoJoin(); sync();
+}
+/** 受付用リンクで開いたとき：通信できれば自動で受付端末として登録する */
+async function autoJoin() {
+  if (!S.ckPending || S.device || isAdmin() || !navigator.onLine || S.joining) return;
+  S.joining = true;
+  try {
+    const label = S.label || ('受付-' + S.dev);
+    const r = await C.joinWithCode(S.ckPending, label, 'ck');
+    S.label = r.label || label; await C.metaSet('label', S.label);
+    S.device = { label: S.label, active: true, role: r.role || 'ck' }; await C.metaSet('device:' + C.EVENT_ID, S.device);
+    await C.metaSet('ckjoin:' + C.EVENT_ID, null); S.ckPending = null; S.msg = '';
+    watchRemote();
+  } catch (e) { S.msg = '受付端末として登録できませんでした：' + esc(C.errText(e)); }
+  S.joining = false; render();
 }
 async function join() {
   const m = $('#joinMsg'); const code = $('#jcode').value.trim(); const label = $('#jlabel').value.trim();
   if (!label) { m.textContent = '端末の名前（例：受付A）を入れてください'; return; }
   if (!code) { m.textContent = '参加コードを入れてください'; return; }
   m.textContent = '登録しています…';
-  try { await C.joinWithCode(code, label); S.label = label; await C.metaSet('label', label); S.device = { label, active: true }; await C.metaSet('device:' + C.EVENT_ID, S.device); m.textContent = ''; watchRemote(); render(); sync(); }
+  try { const r = await C.joinWithCode(code, label, 'timer'); S.label = r.label || label; await C.metaSet('label', S.label); S.device = { label: S.label, active: true, role: r.role || 'timer' }; await C.metaSet('device:' + C.EVENT_ID, S.device); m.textContent = ''; watchRemote(); render(); sync(); }
   catch (e) { m.textContent = C.errText(e); }
 }
 
@@ -146,7 +172,8 @@ function goalOf(r) {
 function whoText() {
   if (!S.userKnown) return ['mid', '確認中'];
   if (isAdmin()) return ['on', '本部：' + (S.user.email || '')];
-  if (S.device && S.device.active !== false) return ['on', '登録済み：' + (S.label || S.device.label || '')];
+  if (S.device && S.device.active !== false) return ['on', (S.device.role === 'ck' ? '受付：' : '計測：') + (S.label || S.device.label || '')];
+  if (S.ckPending) return ['mid', '受付端末（登録待ち・記録は端末に保存）'];
   if (S.device && S.device.active === false) return ['off', '本部で停止中'];
   return ['mid', '未登録（記録は端末に保存）'];
 }
@@ -166,8 +193,9 @@ function render() {
       <button class="btn ${S.swReady ? 'sec' : ''} wide" id="doSW" style="margin-top:6px">${S.swReady ? 'もう一度保存する' : '圏外で使えるように保存'}</button></div>
     <div style="margin-top:14px"><b>2. 大会と参加コード</b>
       <div class="row"><select id="evSel">${S.evList.map(e => `<option value="${esc(e.id)}" ${e.id === C.EVENT_ID ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></div>
-      ${reg ? `<div class="sub" style="margin-top:6px">${isAdmin() ? `本部のアカウント（${esc(S.user.email)}）で送ります。` : `この端末は「${esc(S.label || S.device.label || '')}」として登録済みです。圏外で開き直しても登録は保たれます。`}</div>`
-      : `<div class="sub" style="margin-top:6px">本部から聞いた参加コードを入れて登録します（Googleアカウントは不要）。記録は、登録していなくても端末に保存されます。</div>
+      ${reg ? `<div class="sub" style="margin-top:6px">${isAdmin() ? `本部のアカウント（${esc(S.user.email)}）で送ります。` : `この端末は「${esc(S.label || S.device.label || '')}」（${S.device.role === 'ck' ? '受付専用' : '計測担当'}）として登録済みです。圏外で開き直しても登録は保たれます。`}</div>`
+      : S.ckPending ? `<div class="sub" style="margin-top:6px">受付用リンクで開きました。通信できると自動で受付端末として登録されます。登録前に受付した記録も、この端末に保存され、登録後に送られます。</div>`
+      : `<div class="sub" style="margin-top:6px">計測担当の方は、本部から聞いた参加コードを入れて登録します（Googleアカウントは不要）。受付の方は、本部の「受付用リンク」かQRを開くだけで使えます。記録は、登録していなくても端末に保存されます。</div>
         <div class="row"><input id="jlabel" placeholder="端末の名前（例：受付A）" value="${esc(S.label)}" class="sm"></div>
         <div class="row"><input id="jcode" inputmode="numeric" placeholder="参加コード" autocomplete="off" class="sm"><button class="btn" id="doJoin" ${navigator.onLine ? '' : 'disabled'}>登録</button></div>`}
       <div class="err" id="joinMsg"></div>
@@ -175,7 +203,7 @@ function render() {
         ${isAdmin() ? `<button class="btn sec wide" id="doOut" style="margin-top:6px">ログアウト</button>` : `<button class="btn sec wide" id="doIn" style="margin-top:6px" ${navigator.onLine ? '' : 'disabled'}>Googleでログイン</button>`}
         <div class="err" id="inMsg"></div></details></div>
   </details>
-  <div class="card"><h3>いま記録する地点</h3><div class="pts">${(S.ev ? S.ev.points : []).map(p => `<button class="pt ${S.pt === p.k ? 'sel' : ''}" data-pt="${p.k}">${esc(p.label)}<small>${esc(p.sub || '')}</small></button>`).join('')}</div>
+  <div class="card">${isCkOnly() ? '<h3>受付（受付済みにする）</h3><div class="sub">選手のスマホの番号画面のQR、または番号を入力してください。</div>' : '<h3>いま記録する地点</h3>'}<div class="pts" ${isCkOnly() ? 'style="display:none"' : ''}>${points().map(p => `<button class="pt ${S.pt === p.k ? 'sel' : ''}" data-pt="${p.k}">${esc(p.label)}<small>${esc(p.sub || '')}</small></button>`).join('')}</div>
     <div class="cam ${S.cam ? 'show' : ''}"><video id="cv" playsinline muted></video><div class="lbl">${esc(ptLabel(S.pt))}</div></div>
     <div class="row"><button class="btn ${S.cam ? 'sec' : ''}" id="doCam">${S.cam ? 'カメラを止める' : 'QRを読む'}</button>
       <input id="bib" inputmode="numeric" pattern="[0-9]*" placeholder="番号" autocomplete="off"><button class="btn" id="doRec">記録</button></div>
@@ -201,7 +229,7 @@ function render() {
   const du = $('#doUpd'); if (du) du.onclick = () => { S.swUpdate.postMessage('skipWaiting'); };
   if (S.cam) { const v = $('#cv'); v.srcObject = S.cam.stream; v.play().catch(() => {}); }
 }
-function stHTML(r) { return r.status === 'received' ? `<span class="st received">本部に受領済み ${hms(r.receivedAt)}</span>` : '<span class="st saved">端末に保存済み・未送信</span>'; }
+function stHTML(r) { if (r.status === 'rejected') return '<span class="st void">本部が受け付けませんでした（CSVで本部に渡してください）</span>'; return r.status === 'received' ? `<span class="st received">本部に受領済み ${hms(r.receivedAt)}</span>` : '<span class="st saved">端末に保存済み・未送信</span>'; }
 function renderLast() {
   const el = $('#lastBox'); if (!el) return;
   const r = S.recs.find(x => x.id === S.last); if (!r) { el.innerHTML = ''; return; }
@@ -217,7 +245,7 @@ function renderLast() {
 }
 function renderCounts() {
   const el = $('#counts'); if (!el) return;
-  const rec = S.recs.filter(r => r.status === 'received').length;
+  const rec = S.recs.filter(r => r.status === 'received' || r.status === 'rejected').length;
   el.innerHTML = `<div><b>${S.recs.length}</b>端末に保存</div><div><b>${rec}</b>本部に受領</div><div><b style="color:${S.recs.length - rec ? 'var(--wait)' : 'var(--ok)'}">${S.recs.length - rec}</b>未送信</div>`;
   const m = $('#sendMsg'); if (!m) return;
   m.innerHTML = S.sendErr ? `<span class="err">送れませんでした：${esc(S.sendErr)}</span>` : !navigator.onLine ? '圏外です。記録は端末に保存されます。通信が戻ると自動で送ります'
@@ -239,12 +267,17 @@ async function exportCSV() {
 async function boot() {
   S.dev = await C.deviceId(); S.pt = await C.metaGet('pt', 'G1'); S.label = await C.metaGet('label', ''); S.clk = await C.metaGet('clk', null);
   S.evList = await C.loadEventList().catch(() => []);
-  const evId = new URLSearchParams(location.search).get('ev') || await C.metaGet('ev', C.DEFAULT_EVENT);
+  const qs = new URLSearchParams(location.search);
+  const evId = qs.get('ev') || await C.metaGet('ev', C.DEFAULT_EVENT);
+  // 受付用リンク（?ev=…&ck=コード）：コードを端末に控えてURLから消す
+  if (qs.get('ck')) { await C.metaSet('ckjoin:' + evId, qs.get('ck')); history.replaceState(null, '', location.pathname); }
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
     const reg = await navigator.serviceWorker.getRegistration(); if (reg) { watchUpdate(reg); if (navigator.onLine) reg.update().catch(() => {}); }
   }
   await swCheck();
+  // 通信できるうちに、自動で圏外用に保存しておく（受付用リンクから来た人が押し忘れても大丈夫なように）
+  if (!S.swReady && navigator.onLine && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(() => navigator.serviceWorker.ready).then(swCheck).then(render).catch(() => {});
   await useEvent(evId);
   try { C.onUser(async u => { S.user = u; S.userKnown = true; await useEvent(C.EVENT_ID); }); } catch (e) { S.userKnown = true; render(); }
   addEventListener('online', () => useEvent(C.EVENT_ID)); addEventListener('offline', () => { watchRemote(); render(); });

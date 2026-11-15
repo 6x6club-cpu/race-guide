@@ -149,16 +149,17 @@ export async function logout() { return FB.signOut(firebase().auth); }
 export const recPath = id => evPath('records/' + id);
 const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, ng) => setTimeout(() => ng(new Error(msg)), ms))]);
 
-/** 受付スタッフの端末を参加コードで登録する（Googleアカウント不要）。登録済みなら何もしない */
-export async function joinWithCode(code, label) {
+/** スタッフの端末を参加コードで登録する（Googleアカウント不要）。登録済みなら何もしない
+    role：'timer'（計測担当：参加コード）／'ck'（受付：受付用リンクのコード） */
+export async function joinWithCode(code, label, role = 'timer') {
   const { auth, db } = firebase();
   if (!auth.currentUser) await withTimeout(FB.signInAnonymously(auth), 15000, '通信できないため登録できません');
   const uid = auth.currentUser.uid, ref = FB.doc(db, evPath('devices/' + uid));
   const cur = await withTimeout(FB.getDocFromServer(ref), 15000, '通信できないため登録できません').catch(e => { if (e.code === 'permission-denied') return null; throw e; });
-  if (cur && cur.exists()) { if (cur.get('active') === false) throw new Error('この端末は本部で停止されています'); return { uid, already: true }; }
-  try { await withTimeout(FB.setDoc(ref, { code: String(code).trim(), label: label || '', dev: await deviceId(), active: true, at: FB.serverTimestamp() }), 15000, '通信できないため登録できません'); }
-  catch (e) { if (e.code === 'permission-denied') throw new Error('参加コードが違います'); throw e; }
-  return { uid, already: false };
+  if (cur && cur.exists()) { if (cur.get('active') === false) throw new Error('この端末は本部で停止されています'); return { uid, already: true, role: cur.get('role') || 'timer', label: cur.get('label') }; }
+  try { await withTimeout(FB.setDoc(ref, { code: String(code).trim(), role, label: label || '', dev: await deviceId(), active: true, at: FB.serverTimestamp() }), 15000, '通信できないため登録できません'); }
+  catch (e) { if (e.code === 'permission-denied') throw new Error(role === 'ck' ? '受付用リンクが古いか違います（本部に新しいリンクをもらってください）' : '参加コードが違います'); throw e; }
+  return { uid, already: false, role, label };
 }
 /** この端末が登録済みか（通信できるときだけ確かめる） */
 export async function myDevice() {
@@ -206,8 +207,10 @@ export async function setStart(catK, actualIso, reason, prev) {
   const hist = [...((prev && prev.history) || []), { at: new Date().toISOString(), by: u.email || u.uid, from: (prev && prev.actual) || null, to: actualIso, reason: reason || '' }];
   await FB.setDoc(FB.doc(db, evPath('starts/' + catK)), { actual: actualIso, history: hist });
 }
-export async function getJoinCode() { const { db } = firebase(); const s = await FB.getDoc(FB.doc(db, evPath('private/join'))); return s.exists() ? s.get('code') : ''; }
-export async function setJoinCode(code) { const { db } = firebase(); await FB.setDoc(FB.doc(db, evPath('private/join')), { code: String(code) }); }
+export async function getJoinCodes() { const { db } = firebase(); const s = await FB.getDoc(FB.doc(db, evPath('private/join'))); return s.exists() ? { code: s.get('code') || '', ckCode: s.get('ckCode') || '' } : { code: '', ckCode: '' }; }
+/** k：'code'（計測担当の参加コード）／'ckCode'（受付用リンクのコード） */
+export async function setJoinCode(k, v) { const { db } = firebase(); await FB.setDoc(FB.doc(db, evPath('private/join')), { [k]: String(v) }, { merge: true }); }
+export const ckLink = (ckCode) => new URL(`./?ev=${encodeURIComponent(EVENT_ID)}&ck=${encodeURIComponent(ckCode)}`, location.href).href;
 export async function setDeviceActive(uid, active) { const { db } = firebase(); await FB.updateDoc(FB.doc(db, evPath('devices/' + uid)), { active }); }
 
 export function errText(e) {

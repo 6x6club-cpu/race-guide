@@ -83,15 +83,23 @@ function recHTML(live, vo, cnt, key) {
   </table></div></div>`;
 }
 /* ---- 参加コード・端末 ---- */
+function qrSVG(text) { try { const q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: 5, margin: 2, scalable: true }); } catch (e) { return ''; } }
 function devHTML() {
-  return `<div class="card"><h3>参加コード</h3><p class="sub" style="margin-top:0">受付・計測のスタッフは、このコードを入れて端末を登録します（Googleアカウント不要）。コードを変えても、登録済みの端末はそのまま使えます。</p>
-    <div class="row">いまのコード：<b style="font-size:24px;letter-spacing:.1em">${S.code == null ? '読み込み中…' : esc(S.code) || '（未設定）'}</b>
-    <button class="btn sec" id="newCode">新しいコードを作る</button></div></div>
-  <div class="card"><h3>登録された端末（${S.devices.length}台）</h3><table><tr><th>端末の名前</th><th>端末</th><th>登録</th><th>記録</th><th>状態</th><th></th></tr>
+  const ld = S.code == null; const ck = S.code && S.code.ckCode; const link = ck ? C.ckLink(ck) : '';
+  return `<div class="card"><h3>受付用リンク（受付スタッフは誰でも）</h3>
+    <p class="sub" style="margin-top:0">このリンクかQRを開くだけで、その端末が<b>受付専用</b>として使えるようになります（入力やログインは不要）。受付専用の端末は「受付」しか記録できません。スタッフのLINEに流すか、QRを印刷して受付テントに貼ってください。</p>
+    ${ld ? '読み込み中…' : ck ? `<div class="row" style="align-items:flex-start"><div class="qrbox">${qrSVG(link)}</div><div style="flex:1;min-width:240px"><div class="sub">リンク</div><div class="link">${esc(link)}</div>
+      <div class="row" style="margin-top:8px"><button class="btn" id="copyCk">リンクをコピー</button><button class="btn sec" id="printCk">QRを印刷</button><button class="btn sec" id="newCk">リンクを作り直す</button></div>
+      <p class="sub">作り直すと古いリンクでは新しく登録できなくなります（登録済みの端末はそのまま使えます）。</p></div></div>`
+      : `<button class="btn" id="newCk">受付用リンクを作る</button>`}</div>
+  <div class="card"><h3>計測担当の参加コード</h3><p class="sub" style="margin-top:0">「1周目終了」「フィニッシュ」を記録する計測担当は、このコードを入れて端末を登録します（Googleアカウント不要）。受付スタッフには教えないでください。</p>
+    <div class="row">いまのコード：<b style="font-size:24px;letter-spacing:.1em">${ld ? '…' : esc(S.code.code) || '（未設定）'}</b>
+    <button class="btn sec" id="newCode">${S.code && S.code.code ? 'コードを変える' : 'コードを作る'}</button></div></div>
+  <div class="card"><h3>登録された端末（${S.devices.length}台）</h3><table><tr><th>端末の名前</th><th>役割</th><th>端末</th><th>登録</th><th>記録</th><th>状態</th><th></th></tr>
     ${S.devices.map(d => { const n = S.recs.filter(r => r.by === d.uid).length;
-      return `<tr><td><b>${esc(d.label)}</b></td><td>${esc(d.dev || '')}</td><td>${d.at ? ymdhms(d.at).slice(5, 16) : ''}</td><td>${n}件</td><td>${d.active === false ? '<span class="tag bad">停止中</span>' : '<span class="tag ok">使用中</span>'}</td>
-      <td><button class="btn sec" data-dev="${esc(d.uid)}" data-act="${d.active === false ? 1 : 0}">${d.active === false ? '再開' : '停止'}</button></td></tr>`; }).join('') || '<tr><td colspan="6" class="sub">まだ登録された端末はありません</td></tr>'}</table>
-    <p class="sub">紛失した端末は「停止」すると、その端末からは本部に送れなくなります（端末に残った記録はCSVで回収できます）。</p></div>`;
+      return `<tr><td><b>${esc(d.label)}</b></td><td>${d.role === 'ck' ? '受付専用' : '計測担当'}</td><td>${esc(d.dev || '')}</td><td>${d.at ? ymdhms(d.at).slice(5, 16) : ''}</td><td>${n}件</td><td>${d.active === false ? '<span class="tag bad">停止中</span>' : '<span class="tag ok">使用中</span>'}</td>
+      <td><button class="btn sec" data-dev="${esc(d.uid)}" data-act="${d.active === false ? 1 : 0}">${d.active === false ? '再開' : '停止'}</button></td></tr>`; }).join('') || '<tr><td colspan="7" class="sub">まだ登録された端末はありません</td></tr>'}</table>
+    <p class="sub">紛失した端末や、心当たりのない端末は「停止」すると、その端末からは本部に送れなくなります（端末に残った記録はCSVで回収できます）。</p></div>`;
 }
 /* ---- CSV ---- */
 function csvHTML() {
@@ -118,10 +126,22 @@ function bind() {
     try { await C.setStart(c.k, d.toISOString(), why, S.starts[c.k]); S.editStart = null; } catch (e) { alert(C.errText(e)); } render();
   };
   const sc = $('#stCancel'); if (sc) sc.onclick = () => { S.editStart = null; render(); };
+  const rnd = n => Array.from(crypto.getRandomValues(new Uint32Array(n)), x => x % 10).join('');
   const nc = $('#newCode'); if (nc) nc.onclick = async () => {
-    const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
-    if (S.code && !confirm(`参加コードを ${code} に変えます。これから登録する端末は新しいコードが必要です。よろしいですか？`)) return;
-    try { await C.setJoinCode(code); S.code = code; } catch (e) { alert(C.errText(e)); } render();
+    const code = rnd(6);
+    if (S.code.code && !confirm(`計測担当の参加コードを ${code} に変えます。これから登録する計測端末は新しいコードが必要です。よろしいですか？`)) return;
+    try { await C.setJoinCode('code', code); S.code.code = code; } catch (e) { alert(C.errText(e)); } render();
+  };
+  const nk = $('#newCk'); if (nk) nk.onclick = async () => {
+    if (S.code.ckCode && !confirm('受付用リンクを作り直します。古いリンクでは新しく登録できなくなります。よろしいですか？')) return;
+    const ck = rnd(10);
+    try { await C.setJoinCode('ckCode', ck); S.code.ckCode = ck; } catch (e) { alert(C.errText(e)); } render();
+  };
+  const cc = $('#copyCk'); if (cc) cc.onclick = async () => { try { await navigator.clipboard.writeText(C.ckLink(S.code.ckCode)); cc.textContent = 'コピーしました'; } catch (e) { prompt('このリンクをコピーしてください', C.ckLink(S.code.ckCode)); } };
+  const pc = $('#printCk'); if (pc) pc.onclick = () => {
+    const w = window.open('', '_blank'); const link = C.ckLink(S.code.ckCode);
+    w.document.write(`<!DOCTYPE html><meta charset="utf-8"><title>受付用QR</title><body style="font-family:sans-serif;text-align:center;padding:40px"><h1 style="font-size:40px;margin:0">受付スタッフ用</h1><p style="font-size:22px">${esc(S.ev.name)}</p><div style="width:420px;margin:20px auto">${qrSVG(link)}</div><p style="font-size:20px">スマホのカメラで読み取り、開いたページで受付をしてください</p><p style="font-size:12px;color:#666;word-break:break-all">${esc(link)}</p><script>setTimeout(()=>print(),300)<\/script></body>`);
+    w.document.close();
   };
   $$('[data-dev]').forEach(b => b.onclick = async () => { const act = b.dataset.act === '1'; if (!act && !confirm('この端末を停止しますか？')) return; try { await C.setDeviceActive(b.dataset.dev, act); } catch (e) { alert(C.errText(e)); } });
   const f = $('#csv'); if (f) f.onchange = e => readCSV(e.target.files[0]);
@@ -148,7 +168,7 @@ async function useEvent(id) {
     unsubs.push(C.watchRecords((rs, meta) => { S.recs = rs; S.meta = meta; render(); }, er));
     unsubs.push(C.watchStarts(st => { S.starts = st; render(); }, er));
     unsubs.push(C.watchDevices(ds => { S.devices = ds; render(); }, er));
-    C.getJoinCode().then(c => { S.code = c; render(); }).catch(er);
+    C.getJoinCodes().then(c => { S.code = c; render(); }).catch(er);
   }
   render();
 }
