@@ -30,6 +30,14 @@ input{font:inherit;padding:12px;border:1px solid var(--line);border-radius:10px;
 canvas.cert{width:100%;border:1px solid var(--line);border-radius:6px;margin:10px 0}
   .gmap{position:relative;width:100%;aspect-ratio:4/3;border-radius:10px;overflow:hidden;border:1px solid var(--line);margin:8px 0;background:#e8e6df}.gmap iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .gmap-off{border:1px dashed #b3a6d1;border-radius:10px;padding:14px;margin:8px 0;background:#f8f6fc;font-size:14.5px}.gbtn{text-align:center;text-decoration:none;margin-top:6px}.gbtn.dis{background:#a99bc8}
+.bibq{border:3px solid var(--acc);background:#fff}.bibq h2{margin:0 0 4px;font-size:20px;color:var(--acc)}.bibq input{font-size:20px;padding:14px;margin:8px 0}.bibq .btn{font-size:19px;padding:16px}
+.mybib{display:block;width:100%;background:var(--acc);color:#fff;border:0;border-radius:14px;padding:12px 14px 14px;text-align:center;cursor:pointer;margin:0 0 12px;font:inherit}.mybib .l{font-size:14px;color:#e2d9f3}.mybib .n{font-size:64px;font-weight:900;line-height:1.05;letter-spacing:.02em}.mybib .p{font-size:16px;font-weight:700}.mybib .tap{font-size:12.5px;color:#e2d9f3;margin-top:2px}
+.mini{background:none;border:0;color:var(--acc);font:inherit;font-size:14px;text-decoration:underline;cursor:pointer;padding:6px 0}
+#bigbib{position:fixed;inset:0;z-index:50;background:var(--acc);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px 16px calc(24px + env(safe-area-inset-bottom));overflow:auto}
+#bigbib .l{font-size:20px;font-weight:700;color:#e2d9f3}#bigbib .n{font-size:min(44vw,300px);font-weight:900;line-height:1;margin:6px 0 14px;letter-spacing:-.02em}#bigbib .n.s{font-size:min(30vw,200px)}
+#bigbib .chip{display:inline-block;background:#fff;color:var(--acc);border-radius:999px;padding:8px 18px;font-size:20px;font-weight:800;margin:4px}
+#bigbib .say{font-size:18px;margin:18px 0 22px;line-height:1.5}#bigbib .x{background:#fff;color:var(--acc);border:0;border-radius:12px;padding:14px 40px;font-size:18px;font-weight:800}
+#bigbib .cand{border-top:1px solid rgba(255,255,255,.35);padding:10px 0;width:100%;max-width:420px}
 footer{font-size:12px;color:var(--sub);text-align:center;padding:16px}
 </style></head>
 <body>
@@ -40,13 +48,13 @@ footer{font-size:12px;color:var(--sub);text-align:center;padding:16px}
 <script>
 'use strict';
 const RACE='kusenbu50',CACHE='kq50-guide-v1';
-const BASE_LIST=['./','index.html','manifest.json','data/guide.json','data/notices.json','data/results.json'];
+const BASE_LIST=['./','index.html','manifest.json','data/guide.json','data/notices.json','data/results.json','data/bibs.json'];
 const imgList=()=>[...new Set(((D.guide&&D.guide.sections)||[]).flatMap(s=>[...String(s.body).matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map(m=>m[1])))];
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 const fmt=iso=>{if(!iso)return '—';const d=new Date(iso);return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`};
-const D={guide:null,notices:null,results:null,src:{},fetchedAt:{}};
+const D={guide:null,notices:null,results:null,bibs:null,src:{},fetchedAt:{}};
 
 /* データ：通信できれば最新、だめなら保存した版 */
 async function getJSON(name){
@@ -63,8 +71,8 @@ async function getJSON(name){
   }
 }
 async function load(){
-  const [g,n,r]=await Promise.all(['guide','notices','results'].map(getJSON));
-  D.guide=g;D.notices=n;D.results=r;render();
+  const [g,n,r,b]=await Promise.all(['guide','notices','results','bibs'].map(getJSON));
+  D.guide=g;D.notices=n;D.results=r;D.bibs=b;render();
   refreshSaved();
 }
 /* 保存済みの端末は、通信できたときに控え（ページ・図・データ）を最新に入れ替える */
@@ -116,6 +124,54 @@ function noticesHTML(){
   const items=n.items.filter(x=>!x.hidden).sort((a,b)=>(b.important-a.important)||Date.parse(b.at)-Date.parse(a.at));
   return items.map(x=>`<div class="notice ${x.important?'':'n'}"><div class="h">${x.important?'重要なお知らせ':'お知らせ'}　<span class="tm">${fmt(x.at)}</span></div><div>${esc(x.text).replace(/\n/g,'<br>')}</div></div>`).join('');
 }
+/* ---- 名前からゼッケン番号を調べる ----
+   公開データは「名前を一方向に変換した値→番号」だけ。正規化は tools/make_bibs.py の norm() と同じ手順 */
+const VARIANTS={'髙':'高','﨑':'崎','嵜':'崎','邊':'辺','邉':'辺','濵':'浜','濱':'浜','齋':'斎','齊':'斎','斉':'斎','澤':'沢','櫻':'桜','廣':'広','國':'国','眞':'真','惠':'恵','德':'徳','藏':'蔵','嶋':'島','嶌':'島','峯':'峰','冨':'富','𠮷':'吉','槇':'槙','渕':'淵','栁':'柳','籠':'篭','曻':'昇','彌':'弥','龍':'竜','瀨':'瀬','靜':'静','壽':'寿','實':'実'};
+function normName(s){
+  s=String(s||'').normalize('NFKC').replace(/[\s・･.\-'’]/g,'');
+  s=[...s].map(c=>{const o=c.codePointAt(0);return o>=0x3041&&o<=0x3096?String.fromCodePoint(o+0x60):c}).map(c=>VARIANTS[c]||c).join('').toUpperCase();
+  if(/^[A-Z]+$/.test(s)){s=s.replace(/MB/g,'NB').replace(/MP/g,'NP').replace(/OU|OO|OH(?![AIUEO])/g,'O').replace(/UU/g,'U')}
+  return s;
+}
+function bibInfo(bib){const r=((D.bibs&&D.bibs.rules)||[]).find(x=>bib>=x.from&&bib<=x.to);return r||{}}
+async function lookupBib(name){
+  const k=normName(name);if(!k||!D.bibs)return [];
+  return D.bibs.h[(await sha256(D.bibs.salt+'|'+k)).slice(0,16)]||[];
+}
+function showBig(list){
+  const one=list.length===1;
+  const el=document.createElement('div');el.id='bigbib';el.setAttribute('role','dialog');
+  el.innerHTML=one?(()=>{const b=list[0],i=bibInfo(b);return `<div class="l">あなたのゼッケン番号</div><div class="n${String(b).length>2?' s':''}">${b}</div>
+    <div>${i.cat?`<span class="chip">${esc(i.cat)}</span>`:''}${i.parkLabel?`<span class="chip">${esc(i.parkLabel)}</span>`:''}</div>
+    <div class="say">受付で、この画面を<br>スタッフに見せてください</div>`})()
+    :`<div class="l">同じお名前の方が${list.length}人います</div>`+list.map(b=>{const i=bibInfo(b);return `<div class="cand"><div class="n s" style="font-size:min(22vw,120px);margin:0">${b}</div><span class="chip" style="font-size:15px">${esc(i.cat||'')}</span><span class="chip" style="font-size:15px">${esc(i.parkLabel||'')}</span></div>`}).join('')+`<div class="say">受付でお名前もお伝えください</div>`;
+  el.innerHTML+=`<button class="x">閉じる</button>`;
+  el.querySelector('.x').onclick=()=>{el.remove();render()};
+  document.querySelector('#bigbib')?.remove();document.body.appendChild(el);
+}
+function bibCardHTML(){
+  if(!D.bibs)return '';
+  const me=LS.get('kq50-me',null);
+  if(me&&me.bibs&&me.bibs.length){
+    const b=me.bibs,i=bibInfo(b[0]);
+    return `<button class="mybib" id="myBib"><div class="l">あなたのゼッケン番号</div><div class="n">${b.join(' / ')}</div><div class="p">${b.length===1?esc(i.parkLabel||''):''}</div><div class="tap">タップで大きく表示（受付で見せてください）</div></button>
+    <div style="text-align:right;margin:-8px 0 8px"><button class="mini" id="bibReset">別のお名前で調べる</button></div>`;
+  }
+  return `<div class="card bibq"><h2>ゼッケン番号を確認</h2>
+   <div class="muted">お名前を入れると、番号を大きく表示します。漢字・ひらがな・カタカナ・ローマ字のどれでも探せます。</div>
+   <input id="bname" autocomplete="name" enterkeyhint="search" placeholder="お名前（例：九千部 太郎）">
+   <button class="btn" id="bgo">ゼッケン番号を表示</button><div id="bmsg"></div></div>`;
+}
+function wireBib(){
+  const go=$('#bgo');
+  if(go){const run=async()=>{const v=$('#bname').value.trim(),m=$('#bmsg');if(!v){m.innerHTML='<div class="err">お名前を入れてください</div>';return}
+      const list=await lookupBib(v);
+      if(!list.length){m.innerHTML=`<div class="err">見つかりませんでした。<br>・姓と名をどちらも入れてください<br>・漢字の字体が違うと見つからないことがあります。カタカナかローマ字でもお試しください<br>・見つからないときは、受付でお名前をお伝えください</div>`;return}
+      LS.set('kq50-me',{bibs:list,at:new Date().toISOString()});if(list.length===1)LS.set('kq50-bib',String(list[0]));showBig(list)};
+    go.onclick=run;$('#bname').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();run()}})}
+  const my=$('#myBib');if(my)my.onclick=()=>showBig(LS.get('kq50-me',{bibs:[]}).bibs);
+  const rs=$('#bibReset');if(rs)rs.onclick=()=>{try{localStorage.removeItem('kq50-me')}catch(e){}render();setTimeout(()=>$('#bname')&&$('#bname').focus(),0)};
+}
 function route(){return (location.hash||'#top').slice(1)}
 function render(){
   statusLine();const g=D.guide;
@@ -131,14 +187,14 @@ function render(){
 }
 function renderTop(){
   const g=D.guide,sv=LS.get('kq50-saved',null);const pub=D.results&&D.results.published;
-  $('#main').innerHTML=noticesHTML()+`
+  $('#main').innerHTML=noticesHTML()+bibCardHTML()+`
   <div class="card"><dl class="sum">${g.summary.map(x=>`<dt>${esc(x.k)}</dt><dd>${esc(x.v)}${x.sub?`<small>${esc(x.sub)}</small>`:''}${x.links?`<div class="links">${x.links.map(([t,u])=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}の地図</a>`).join('')}</div>`:''}</dd>`).join('')}</dl></div>
   <div class="nav">${g.sections.map(s=>`<a href="#${s.id}">${esc(s.title)}</a>`).join('')}</div>
   <div class="card"><button class="btn" id="saveBtn">当日の案内を保存</button>
    <div class="saved" id="savedMsg">${sv?savedText(sv):'通信できる場所で一度押しておくと、圏外や機内モードでもこのページを開けます。'}</div></div>
   <div class="nav after"><a href="#results">リザルト</a><a href="#cert">記録証</a></div>
   ${pub?'':'<p class="muted" style="text-align:center">リザルトと記録証は、大会後に公開します</p>'}`;
-  $('#saveBtn').onclick=saveForOffline;
+  $('#saveBtn').onclick=saveForOffline;wireBib();
 }
 async function saveForOffline(){
   const b=$('#saveBtn'),m=$('#savedMsg');b.disabled=true;m.textContent='保存しています…';
