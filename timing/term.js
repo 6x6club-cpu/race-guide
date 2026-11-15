@@ -4,13 +4,15 @@ import * as C from './common.js';
 const { $, $$, esc, hms, dur, BUILD } = C;
 
 const S = { ev: null, evList: [], pt: 'G1', recs: [], remote: [], starts: {}, user: null, userKnown: false, device: null, dev: '', label: '',
-  ckPending: null, cam: null, last: null, sending: false, sendErr: '', swReady: false, swUpdate: null, msg: '', clk: null, unsubs: [] };
+  linkPending: null, cam: null, last: null, sending: false, sendErr: '', swReady: false, swUpdate: null, msg: '', clk: null, unsubs: [] };
 const ptLabel = k => k === 'VOID' ? '取消' : ((S.ev && S.ev.points.find(p => p.k === k)) || { label: k }).label;
 const isAdmin = () => !!(S.user && !S.user.isAnonymous);
 const canSend = () => !!(S.user && (isAdmin() || (S.device && S.device.active !== false)));
 /** 受付専用の端末（受付用リンクで登録）：記録できるのは受付だけ */
-const isCkOnly = () => !isAdmin() && ((S.device && S.device.role === 'ck') || (!S.device && !!S.ckPending));
-const points = () => (S.ev ? S.ev.points : []).filter(p => !isCkOnly() || (S.ev.ckPoints || ['CK']).includes(p.k));
+/** リンクで登録した端末（受付専用・スイーパー）の役割。登録前でもリンクで開いていればその役割 */
+const linkRole = () => isAdmin() ? null : (S.device ? (C.LINK_ROLES[S.device.role] ? S.device.role : null) : (S.linkPending && S.linkPending.role) || null);
+const isCkOnly = () => !!linkRole();
+const points = () => (S.ev ? S.ev.points : []).filter(p => !linkRole() || C.LINK_ROLES[linkRole()].pts.includes(p.k));
 
 /* ---------- 音と画面の合図（圏外でも鳴る） ---------- */
 let ac = null;
@@ -32,7 +34,7 @@ function liveAll() {
   return all.filter(r => r.pt !== 'VOID' && !vo.has(r.id));
 }
 async function record(raw, how) {
-  if (isCkOnly() && !points().find(p => p.k === S.pt)) S.pt = 'CK';
+  if (linkRole() && !points().find(p => p.k === S.pt)) S.pt = points()[0].k;
   const bib = C.bibOf(raw);
   if (!bib) { S.msg = `番号を読み取れませんでした（${esc(String(raw).slice(0, 40))}）`; beep(false); render(); return; }
   const warn = [], pac = C.isPacer(bib), live = liveAll(), who = r => hms(r.t) + (r.dev !== S.dev ? ' ' + (r.label || r.dev) : '');
@@ -46,7 +48,8 @@ async function record(raw, how) {
     if (pac && S.pt !== 'CK') warn.push('ペーサーは計測しません（ペーサー出発・戻りで記録してください）');
     const prev = live.filter(r => r.bib === bib && r.pt === S.pt);
     if (prev.length) warn.push(`${S.pt === 'CK' ? '受付済み' : 'この地点で記録済み'}（${prev.map(who).join('、')}）`);
-    if ((S.pt === 'G1' || S.pt === 'GF' || S.pt === 'DN') && !pac && !st.ck) warn.push('受付の記録がありません');
+    // スイーパーは山の中で受付の記録を受け取れないことが多いので、この警告は出さない
+    if ((S.pt === 'G1' || S.pt === 'GF' || (S.pt === 'DN' && linkRole() !== 'sweep')) && !pac && !st.ck) warn.push('受付の記録がありません');
   }
   await save({ bib, pt: S.pt, t: new Date().toISOString(), how, raw: String(raw).slice(0, 200), warn, label: S.label });
 }
@@ -143,24 +146,24 @@ async function useEvent(id) {
   S.starts = await C.metaGet('starts:' + id, {});
   const last = S.recs.filter(r => r.pt !== 'VOID').pop(); S.last = last && last.id;
   if (S.ev && !S.ev.points.find(p => p.k === S.pt)) S.pt = S.ev.points[0].k;
-  S.device = await C.metaGet('device:' + id, null); S.ckPending = await C.metaGet('ckjoin:' + id, null);
+  S.device = await C.metaGet('device:' + id, null); S.linkPending = await C.metaGet('linkjoin:' + id, null);
   if (S.user && S.user.isAnonymous && navigator.onLine) { const d = await C.myDevice(); if (d !== undefined) { S.device = d && { label: d.label, active: d.active, role: d.role || 'timer' }; await C.metaSet('device:' + id, S.device); } }
-  if (isCkOnly()) S.pt = 'CK';
+  if (linkRole() && !points().find(p => p.k === S.pt)) S.pt = points()[0].k;
   watchRemote(); render();
   await autoJoin(); sync();
 }
 /** 受付用リンクで開いたとき：通信できれば自動で受付端末として登録する */
 async function autoJoin() {
-  if (!S.ckPending || S.device || isAdmin() || !navigator.onLine || S.joining) return;
-  S.joining = true;
+  if (!S.linkPending || S.device || isAdmin() || !navigator.onLine || S.joining) return;
+  S.joining = true; const L = C.LINK_ROLES[S.linkPending.role];
   try {
-    const label = S.label || ('受付-' + S.dev);
-    const r = await C.joinWithCode(S.ckPending, label, 'ck');
+    const label = (S.label && S.label.startsWith(L.prefix)) ? S.label : (L.prefix + S.dev);
+    const r = await C.joinWithCode(S.linkPending.code, label, S.linkPending.role);
     S.label = r.label || label; await C.metaSet('label', S.label);
-    S.device = { label: S.label, active: true, role: r.role || 'ck' }; await C.metaSet('device:' + C.EVENT_ID, S.device);
-    await C.metaSet('ckjoin:' + C.EVENT_ID, null); S.ckPending = null; S.msg = '';
+    S.device = { label: S.label, active: true, role: r.role || S.linkPending.role }; await C.metaSet('device:' + C.EVENT_ID, S.device);
+    await C.metaSet('linkjoin:' + C.EVENT_ID, null); S.linkPending = null; S.msg = '';
     watchRemote();
-  } catch (e) { S.msg = '受付端末として登録できませんでした：' + esc(C.errText(e)); }
+  } catch (e) { S.msg = `${L.label}の端末として登録できませんでした：` + esc(C.errText(e)); }
   S.joining = false; render();
 }
 async function join() {
@@ -180,8 +183,8 @@ function goalOf(r) {
 function whoText() {
   if (!S.userKnown) return ['mid', '確認中'];
   if (isAdmin()) return ['on', '本部：' + (S.user.email || '')];
-  if (S.device && S.device.active !== false) return ['on', (S.device.role === 'ck' ? '受付：' : '計測：') + (S.label || S.device.label || '')];
-  if (S.ckPending) return ['mid', '受付端末（登録待ち・記録は端末に保存）'];
+  if (S.device && S.device.active !== false) return ['on', C.roleLabel(S.device.role) + '：' + (S.label || S.device.label || '')];
+  if (S.linkPending) return ['mid', C.LINK_ROLES[S.linkPending.role].label + '（登録待ち・記録は端末に保存）'];
   if (S.device && S.device.active === false) return ['off', '本部で停止中'];
   return ['mid', '未登録（記録は端末に保存）'];
 }
@@ -201,8 +204,8 @@ function render() {
       <button class="btn ${S.swReady ? 'sec' : ''} wide" id="doSW" style="margin-top:6px">${S.swReady ? 'もう一度保存する' : '圏外で使えるように保存'}</button></div>
     <div style="margin-top:14px"><b>2. 大会と参加コード</b>
       <div class="row"><select id="evSel">${S.evList.map(e => `<option value="${esc(e.id)}" ${e.id === C.EVENT_ID ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></div>
-      ${reg ? `<div class="sub" style="margin-top:6px">${isAdmin() ? `本部のアカウント（${esc(S.user.email)}）で送ります。` : `この端末は「${esc(S.label || S.device.label || '')}」（${S.device.role === 'ck' ? '受付専用' : '計測担当'}）として登録済みです。圏外で開き直しても登録は保たれます。`}</div>`
-      : S.ckPending ? `<div class="sub" style="margin-top:6px">受付用リンクで開きました。通信できると自動で受付端末として登録されます。登録前に受付した記録も、この端末に保存され、登録後に送られます。</div>`
+      ${reg ? `<div class="sub" style="margin-top:6px">${isAdmin() ? `本部のアカウント（${esc(S.user.email)}）で送ります。` : `この端末は「${esc(S.label || S.device.label || '')}」（${C.roleLabel(S.device.role)}）として登録済みです。圏外で開き直しても登録は保たれます。`}</div>`
+      : S.linkPending ? `<div class="sub" style="margin-top:6px">${C.LINK_ROLES[S.linkPending.role].name}で開きました。通信できると自動で${C.LINK_ROLES[S.linkPending.role].label}の端末として登録されます。登録前の記録も、この端末に保存され、登録後に送られます。</div>`
       : `<div class="sub" style="margin-top:6px">計測担当の方は、本部から聞いた参加コードを入れて登録します（Googleアカウントは不要）。受付の方は、本部の「受付用リンク」かQRを開くだけで使えます。記録は、登録していなくても端末に保存されます。</div>
         <div class="row"><input id="jlabel" placeholder="端末の名前（例：受付A）" value="${esc(S.label)}" class="sm"></div>
         <div class="row"><input id="jcode" inputmode="numeric" placeholder="参加コード" autocomplete="off" class="sm"><button class="btn" id="doJoin" ${navigator.onLine ? '' : 'disabled'}>登録</button></div>`}
@@ -211,7 +214,8 @@ function render() {
         ${isAdmin() ? `<button class="btn sec wide" id="doOut" style="margin-top:6px">ログアウト</button>` : `<button class="btn sec wide" id="doIn" style="margin-top:6px" ${navigator.onLine ? '' : 'disabled'}>Googleでログイン</button>`}
         <div class="err" id="inMsg"></div></details></div>
   </details>
-  <div class="card">${isCkOnly() ? '<h3>受付（受付専用の端末）</h3><div class="sub">選手・ペーサーのスマホの番号画面のQR、または番号（ペーサーは P-23 のように）を入れてください。</div>' : '<h3>いま記録する地点</h3>'}<div class="pts" style="margin-top:8px">${points().map(p => `<button class="pt ${S.pt === p.k ? 'sel' : ''}" data-pt="${p.k}">${esc(p.label)}<small>${esc(p.sub || '')}</small></button>`).join('')}</div>
+  <div class="card">${linkRole() === 'ck' ? '<h3>受付（受付専用の端末）</h3><div class="sub">選手・ペーサーのスマホの番号画面のQR、または番号（ペーサーは P-23 のように）を入れてください。</div>'
+    : linkRole() === 'sweep' ? '<h3>リタイア（スイーパー）</h3><div class="sub">リタイアした選手の番号を入れて「記録」を押してください。圏外でも端末に保存され、電波が入ると本部に届きます。</div>' : '<h3>いま記録する地点</h3>'}<div class="pts" style="margin-top:8px">${points().map(p => `<button class="pt ${S.pt === p.k ? 'sel' : ''}" data-pt="${p.k}">${esc(p.label)}<small>${esc(p.sub || '')}</small></button>`).join('')}</div>
     <div class="cam ${S.cam ? 'show' : ''}"><video id="cv" playsinline muted></video><div class="lbl">${esc(ptLabel(S.pt))}</div></div>
     <div class="row"><button class="btn ${S.cam ? 'sec' : ''}" id="doCam">${S.cam ? 'カメラを止める' : 'QRを読む'}</button>
       <button class="btn sec" id="doP" title="ペーサー番号を入れる">P</button><input id="bib" inputmode="numeric" pattern="[0-9]*" placeholder="番号" autocomplete="off"><button class="btn" id="doRec">記録</button></div>
@@ -281,7 +285,7 @@ async function boot() {
   const qs = new URLSearchParams(location.search);
   const evId = qs.get('ev') || await C.metaGet('ev', C.DEFAULT_EVENT);
   // 受付用リンク（?ev=…&ck=コード）：コードを端末に控えてURLから消す
-  if (qs.get('ck')) { await C.metaSet('ckjoin:' + evId, qs.get('ck')); history.replaceState(null, '', location.pathname); }
+  for (const [role, L] of Object.entries(C.LINK_ROLES)) if (qs.get(L.param)) { await C.metaSet('linkjoin:' + evId, { role, code: qs.get(L.param) }); history.replaceState(null, '', location.pathname); }
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
     const reg = await navigator.serviceWorker.getRegistration(); if (reg) { watchUpdate(reg); if (navigator.onLine) reg.update().catch(() => {}); }

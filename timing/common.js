@@ -15,6 +15,12 @@ export const FIREBASE_CONFIG = {
   appId: '1:279271996958:web:d65042d081763ddeb6380f',
 };
 export const DEFAULT_EVENT = 'test-kq50';
+/** リンクで登録する役割：受付専用・スイーパー。記録できる地点を限る（ルールでも同じ制限） */
+export const LINK_ROLES = {
+  ck: { codeKey: 'ckCode', param: 'ck', pts: ['CK', 'PO', 'PI'], label: '受付専用', short: '受付', name: '受付用リンク', prefix: '受付-' },
+  sweep: { codeKey: 'swCode', param: 'sw', pts: ['DN'], label: 'スイーパー', short: 'スイーパー', name: 'スイーパー用リンク', prefix: 'スイーパー-' },
+};
+export const roleLabel = r => LINK_ROLES[r] ? LINK_ROLES[r].label : '計測担当';
 export let EVENT_ID = DEFAULT_EVENT;
 export function setEventId(id) { EVENT_ID = id; }
 
@@ -183,7 +189,7 @@ export async function joinWithCode(code, label, role = 'timer') {
   const cur = await withTimeout(FB.getDocFromServer(ref), 15000, '通信できないため登録できません').catch(e => { if (e.code === 'permission-denied') return null; throw e; });
   if (cur && cur.exists()) { if (cur.get('active') === false) throw new Error('この端末は本部で停止されています'); return { uid, already: true, role: cur.get('role') || 'timer', label: cur.get('label') }; }
   try { await withTimeout(FB.setDoc(ref, { code: String(code).trim(), role, label: label || '', dev: await deviceId(), active: true, at: FB.serverTimestamp() }), 15000, '通信できないため登録できません'); }
-  catch (e) { if (e.code === 'permission-denied') throw new Error(role === 'ck' ? '受付用リンクが古いか違います（本部に新しいリンクをもらってください）' : '参加コードが違います'); throw e; }
+  catch (e) { if (e.code === 'permission-denied') throw new Error(LINK_ROLES[role] ? `${LINK_ROLES[role].name}が古いか違います（本部に新しいリンクをもらってください）` : '参加コードが違います'); throw e; }
   return { uid, already: false, role, label };
 }
 /** この端末が登録済みか（通信できるときだけ確かめる） */
@@ -232,10 +238,10 @@ export async function setStart(catK, actualIso, reason, prev) {
   const hist = [...((prev && prev.history) || []), { at: new Date().toISOString(), by: u.email || u.uid, from: (prev && prev.actual) || null, to: actualIso, reason: reason || '' }];
   await FB.setDoc(FB.doc(db, evPath('starts/' + catK)), { actual: actualIso, history: hist });
 }
-export async function getJoinCodes() { const { db } = firebase(); const s = await FB.getDoc(FB.doc(db, evPath('private/join'))); return s.exists() ? { code: s.get('code') || '', ckCode: s.get('ckCode') || '' } : { code: '', ckCode: '' }; }
+export async function getJoinCodes() { const { db } = firebase(); const s = await FB.getDoc(FB.doc(db, evPath('private/join'))); const d = s.exists() ? s.data() : {}; return { code: d.code || '', ckCode: d.ckCode || '', swCode: d.swCode || '' }; }
 /** k：'code'（計測担当の参加コード）／'ckCode'（受付用リンクのコード） */
 export async function setJoinCode(k, v) { const { db } = firebase(); await FB.setDoc(FB.doc(db, evPath('private/join')), { [k]: String(v) }, { merge: true }); }
-export const ckLink = (ckCode) => new URL(`./?ev=${encodeURIComponent(EVENT_ID)}&ck=${encodeURIComponent(ckCode)}`, location.href).href;
+export const roleLink = (role, code) => new URL(`./?ev=${encodeURIComponent(EVENT_ID)}&${LINK_ROLES[role].param}=${encodeURIComponent(code)}`, location.href).href;
 export async function setDeviceActive(uid, active) { const { db } = firebase(); await FB.updateDoc(FB.doc(db, evPath('devices/' + uid)), { active }); }
 
 export function errText(e) {

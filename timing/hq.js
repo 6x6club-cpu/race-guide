@@ -108,20 +108,27 @@ function recHTML(live, vo, cnt, key) {
 }
 /* ---- 参加コード・端末 ---- */
 function qrSVG(text) { try { const q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: 5, margin: 2, scalable: true }); } catch (e) { return ''; } }
-function devHTML() {
-  const ld = S.code == null; const ck = S.code && S.code.ckCode; const link = ck ? C.ckLink(ck) : '';
-  return `<div class="card"><h3>受付用リンク（受付スタッフは誰でも）</h3>
-    <p class="sub" style="margin-top:0">このリンクかQRを開くだけで、その端末が<b>受付専用</b>として使えるようになります（入力やログインは不要）。受付専用の端末は「受付」しか記録できません。スタッフのLINEに流すか、QRを印刷して受付テントに貼ってください。</p>
-    ${ld ? '読み込み中…' : ck ? `<div class="row" style="align-items:flex-start"><div class="qrbox">${qrSVG(link)}</div><div style="flex:1;min-width:240px"><div class="sub">リンク</div><div class="link">${esc(link)}</div>
-      <div class="row" style="margin-top:8px"><button class="btn" id="copyCk">リンクをコピー</button><button class="btn sec" id="printCk">QRを印刷</button><button class="btn sec" id="newCk">リンクを作り直す</button></div>
+const ROLE_HELP = {
+  ck: 'このリンクかQRを開くだけで、その端末が<b>受付専用</b>になります（入力やログインは不要）。記録できるのは「受付」「ペーサー出発」「ペーサー戻り」だけです。スタッフのLINEに流すか、QRを印刷して受付テントに貼ってください。',
+  sweep: 'スイーパーに送ってください。開くだけで、その端末が<b>スイーパー</b>になります。記録できるのは「リタイア（下山確認）」だけです。山の中で圏外でも端末に保存され、電波が入ると本部に届きます。',
+};
+function linkCard(role) {
+  const L = C.LINK_ROLES[role], ld = S.code == null, code = S.code && S.code[L.codeKey], link = code ? C.roleLink(role, code) : '';
+  return `<div class="card"><h3>${L.name}</h3><p class="sub" style="margin-top:0">${ROLE_HELP[role]}</p>
+    ${ld ? '読み込み中…' : code ? `<div class="row" style="align-items:flex-start"><div class="qrbox">${qrSVG(link)}</div><div style="flex:1;min-width:240px"><div class="sub">リンク</div><div class="link">${esc(link)}</div>
+      <div class="row" style="margin-top:8px"><button class="btn" data-copy="${role}">リンクをコピー</button><button class="btn sec" data-print="${role}">QRを印刷</button><button class="btn sec" data-new="${role}">リンクを作り直す</button></div>
       <p class="sub">作り直すと古いリンクでは新しく登録できなくなります（登録済みの端末はそのまま使えます）。</p></div></div>`
-      : `<button class="btn" id="newCk">受付用リンクを作る</button>`}</div>
+      : `<button class="btn" data-new="${role}">${L.name}を作る</button>`}</div>`;
+}
+function devHTML() {
+  const ld = S.code == null;
+  return linkCard('ck') + linkCard('sweep') + `
   <div class="card"><h3>計測担当の参加コード</h3><p class="sub" style="margin-top:0">「1周目終了」「フィニッシュ」を記録する計測担当は、このコードを入れて端末を登録します（Googleアカウント不要）。受付スタッフには教えないでください。</p>
     <div class="row">いまのコード：<b style="font-size:24px;letter-spacing:.1em">${ld ? '…' : esc(S.code.code) || '（未設定）'}</b>
     <button class="btn sec" id="newCode">${S.code && S.code.code ? 'コードを変える' : 'コードを作る'}</button></div></div>
   <div class="card"><h3>登録された端末（${S.devices.length}台）</h3><table><tr><th>端末の名前</th><th>役割</th><th>端末</th><th>登録</th><th>記録</th><th>状態</th><th></th></tr>
     ${S.devices.map(d => { const n = S.recs.filter(r => r.by === d.uid).length;
-      return `<tr><td><b>${esc(d.label)}</b></td><td>${d.role === 'ck' ? '受付専用' : '計測担当'}</td><td>${esc(d.dev || '')}</td><td>${d.at ? ymdhms(d.at).slice(5, 16) : ''}</td><td>${n}件</td><td>${d.active === false ? '<span class="tag bad">停止中</span>' : '<span class="tag ok">使用中</span>'}</td>
+      return `<tr><td><b>${esc(d.label)}</b></td><td>${C.roleLabel(d.role)}</td><td>${esc(d.dev || '')}</td><td>${d.at ? ymdhms(d.at).slice(5, 16) : ''}</td><td>${n}件</td><td>${d.active === false ? '<span class="tag bad">停止中</span>' : '<span class="tag ok">使用中</span>'}</td>
       <td><button class="btn sec" data-dev="${esc(d.uid)}" data-act="${d.active === false ? 1 : 0}">${d.active === false ? '再開' : '停止'}</button></td></tr>`; }).join('') || '<tr><td colspan="7" class="sub">まだ登録された端末はありません</td></tr>'}</table>
     <p class="sub">紛失した端末や、心当たりのない端末は「停止」すると、その端末からは本部に送れなくなります（端末に残った記録はCSVで回収できます）。</p></div>`;
 }
@@ -156,17 +163,18 @@ function bind() {
     if (S.code.code && !confirm(`計測担当の参加コードを ${code} に変えます。これから登録する計測端末は新しいコードが必要です。よろしいですか？`)) return;
     try { await C.setJoinCode('code', code); S.code.code = code; } catch (e) { alert(C.errText(e)); } render();
   };
-  const nk = $('#newCk'); if (nk) nk.onclick = async () => {
-    if (S.code.ckCode && !confirm('受付用リンクを作り直します。古いリンクでは新しく登録できなくなります。よろしいですか？')) return;
-    const ck = rnd(10);
-    try { await C.setJoinCode('ckCode', ck); S.code.ckCode = ck; } catch (e) { alert(C.errText(e)); } render();
-  };
-  const cc = $('#copyCk'); if (cc) cc.onclick = async () => { try { await navigator.clipboard.writeText(C.ckLink(S.code.ckCode)); cc.textContent = 'コピーしました'; } catch (e) { prompt('このリンクをコピーしてください', C.ckLink(S.code.ckCode)); } };
-  const pc = $('#printCk'); if (pc) pc.onclick = () => {
-    const w = window.open('', '_blank'); const link = C.ckLink(S.code.ckCode);
-    w.document.write(`<!DOCTYPE html><meta charset="utf-8"><title>受付用QR</title><body style="font-family:sans-serif;text-align:center;padding:40px"><h1 style="font-size:40px;margin:0">受付スタッフ用</h1><p style="font-size:22px">${esc(S.ev.name)}</p><div style="width:420px;margin:20px auto">${qrSVG(link)}</div><p style="font-size:20px">スマホのカメラで読み取り、開いたページで受付をしてください</p><p style="font-size:12px;color:#666;word-break:break-all">${esc(link)}</p><script>setTimeout(()=>print(),300)<\/script></body>`);
+  $$('[data-new]').forEach(b => b.onclick = async () => {
+    const role = b.dataset.new, L = C.LINK_ROLES[role];
+    if (S.code[L.codeKey] && !confirm(`${L.name}を作り直します。古いリンクでは新しく登録できなくなります。よろしいですか？`)) return;
+    const v = rnd(10);
+    try { await C.setJoinCode(L.codeKey, v); S.code[L.codeKey] = v; } catch (e) { alert(C.errText(e)); } render();
+  });
+  $$('[data-copy]').forEach(b => b.onclick = async () => { const l = C.roleLink(b.dataset.copy, S.code[C.LINK_ROLES[b.dataset.copy].codeKey]); try { await navigator.clipboard.writeText(l); b.textContent = 'コピーしました'; } catch (e) { prompt('このリンクをコピーしてください', l); } });
+  $$('[data-print]').forEach(b => b.onclick = () => {
+    const role = b.dataset.print, L = C.LINK_ROLES[role], link = C.roleLink(role, S.code[L.codeKey]); const w = window.open('', '_blank');
+    w.document.write(`<!DOCTYPE html><meta charset="utf-8"><title>${L.short}用QR</title><body style="font-family:sans-serif;text-align:center;padding:40px"><h1 style="font-size:40px;margin:0">${L.short}スタッフ用</h1><p style="font-size:22px">${esc(S.ev.name)}</p><div style="width:420px;margin:20px auto">${qrSVG(link)}</div><p style="font-size:20px">スマホのカメラで読み取り、開いたページで記録してください</p><p style="font-size:12px;color:#666;word-break:break-all">${esc(link)}</p><script>setTimeout(()=>print(),300)<\/script></body>`);
     w.document.close();
-  };
+  });
   $$('[data-dev]').forEach(b => b.onclick = async () => { const act = b.dataset.act === '1'; if (!act && !confirm('この端末を停止しますか？')) return; try { await C.setDeviceActive(b.dataset.dev, act); } catch (e) { alert(C.errText(e)); } });
   const f = $('#csv'); if (f) f.onchange = e => readCSV(e.target.files[0]);
   const ex = $('#exp'); if (ex) ex.onclick = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); C.saveFile(`本部受領_${C.EVENT_ID}_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.csv`, C.toCSV(S.recs.map(r => ({ ...r, status: 'received' })), ptLabel)); };
