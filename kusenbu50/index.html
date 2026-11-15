@@ -36,6 +36,8 @@ canvas.cert{width:100%;border:1px solid var(--line);border-radius:6px;margin:10p
 #bigbib{position:fixed;inset:0;z-index:50;background:var(--acc);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px 16px calc(24px + env(safe-area-inset-bottom));overflow:auto}
 #bigbib .l{font-size:20px;font-weight:700;color:#e2d9f3}#bigbib .n{font-size:min(44vw,300px);font-weight:900;line-height:1;margin:6px 0 14px;letter-spacing:-.02em}#bigbib .n.s{font-size:min(30vw,200px)}
 #bigbib .chip{display:inline-block;background:#fff;color:var(--acc);border-radius:999px;padding:8px 18px;font-size:20px;font-weight:800;margin:4px}
+#bigbib .who{font-size:clamp(26px,8vw,40px);font-weight:900;line-height:1.25;margin:0 0 14px;word-break:break-all}#bigbib .who small{font-size:.6em;font-weight:700;margin-left:.2em}#bigbib .pk{font-size:15px;font-weight:700;background:rgba(255,255,255,.16);border-radius:10px;padding:8px 12px;margin:10px auto 0;max-width:420px;line-height:1.5}
+.mybib .who{font-size:22px;font-weight:900;line-height:1.3;word-break:break-all}.mybib .who small{font-size:.65em;margin-left:.2em}.mybib .pk{font-size:13px;color:#fff;background:rgba(255,255,255,.16);border-radius:8px;padding:5px 8px;margin:6px auto 2px;display:inline-block}
 #bigbib .say{font-size:18px;margin:18px 0 22px;line-height:1.5}#bigbib .x{background:#fff;color:var(--acc);border:0;border-radius:12px;padding:14px 40px;font-size:18px;font-weight:800}
 #bigbib .cand{border-top:1px solid rgba(255,255,255,.35);padding:10px 0;width:100%;max-width:420px}
 footer{font-size:12px;color:var(--sub);text-align:center;padding:16px}
@@ -138,13 +140,15 @@ async function lookupBib(name){
   const k=normName(name);if(!k||!D.bibs)return [];
   return D.bibs.h[(await sha256(D.bibs.salt+'|'+k)).slice(0,16)]||[];
 }
-function showBig(list){
+const PKNOTE='※駐車券を事前に購入した方のみ駐車できます';
+const whoHTML=n=>n?`<div class="who">${esc(n)}<small>さん</small></div>`:'';
+function showBig(list,name){
   const one=list.length===1;
   const el=document.createElement('div');el.id='bigbib';el.setAttribute('role','dialog');
-  el.innerHTML=one?(()=>{const b=list[0],i=bibInfo(b);return `<div class="l">あなたのゼッケン番号</div><div class="n${String(b).length>2?' s':''}">${b}</div>
-    <div>${i.cat?`<span class="chip">${esc(i.cat)}</span>`:''}${i.parkLabel?`<span class="chip">${esc(i.parkLabel)}</span>`:''}</div>
+  el.innerHTML=one?(()=>{const b=list[0],i=bibInfo(b);return `${whoHTML(name)}<div class="l">あなたのゼッケン番号</div><div class="n${String(b).length>2?' s':''}">${b}</div>
+    <div>${i.cat?`<span class="chip">${esc(i.cat)}</span>`:''}${i.parkLabel?`<span class="chip">${esc(i.parkLabel)}</span>`:''}</div>${i.parkLabel?`<div class="pk">${PKNOTE}</div>`:''}
     <div class="say">受付で、この画面を<br>スタッフに見せてください</div>`})()
-    :`<div class="l">同じお名前の方が${list.length}人います</div>`+list.map(b=>{const i=bibInfo(b);return `<div class="cand"><div class="n s" style="font-size:min(22vw,120px);margin:0">${b}</div><span class="chip" style="font-size:15px">${esc(i.cat||'')}</span><span class="chip" style="font-size:15px">${esc(i.parkLabel||'')}</span></div>`}).join('')+`<div class="say">受付でお名前もお伝えください</div>`;
+    :whoHTML(name)+`<div class="l">同じお名前の方が${list.length}人います</div>`+list.map(b=>{const i=bibInfo(b);return `<div class="cand"><div class="n s" style="font-size:min(22vw,120px);margin:0">${b}</div><span class="chip" style="font-size:15px">${esc(i.cat||'')}</span><span class="chip" style="font-size:15px">${esc(i.parkLabel||'')}</span></div>`}).join('')+`<div class="pk">${PKNOTE}</div><div class="say">受付でお名前もお伝えください</div>`;
   el.innerHTML+=`<button class="x">閉じる</button>`;
   el.querySelector('.x').onclick=()=>{el.remove();render()};
   document.querySelector('#bigbib')?.remove();document.body.appendChild(el);
@@ -154,7 +158,7 @@ function bibCardHTML(){
   const me=LS.get('kq50-me',null);
   if(me&&me.bibs&&me.bibs.length){
     const b=me.bibs,i=bibInfo(b[0]);
-    return `<button class="mybib" id="myBib"><div class="l">あなたのゼッケン番号</div><div class="n">${b.join(' / ')}</div><div class="p">${b.length===1?esc(i.parkLabel||''):''}</div><div class="tap">タップで大きく表示（受付で見せてください）</div></button>
+    return `<button class="mybib" id="myBib">${me.name?`<div class="who">${esc(me.name)}<small>さん</small></div>`:''}<div class="l">あなたのゼッケン番号</div><div class="n">${b.join(' / ')}</div><div class="p">${b.length===1?esc(i.parkLabel||''):''}</div>${b.length===1&&i.parkLabel?`<div class="pk">${PKNOTE}</div><br>`:''}<div class="tap">タップで大きく表示（受付で見せてください）</div></button>
     <div style="text-align:right;margin:-8px 0 8px"><button class="mini" id="bibReset">別のお名前で調べる</button></div>`;
   }
   return `<div class="card bibq"><h2>ゼッケン番号を確認</h2>
@@ -167,9 +171,9 @@ function wireBib(){
   if(go){const run=async()=>{const v=$('#bname').value.trim(),m=$('#bmsg');if(!v){m.innerHTML='<div class="err">お名前を入れてください</div>';return}
       const list=await lookupBib(v);
       if(!list.length){m.innerHTML=`<div class="err">見つかりませんでした。<br>・姓と名をどちらも入れてください<br>・漢字の字体が違うと見つからないことがあります。カタカナかローマ字でもお試しください<br>・見つからないときは、受付でお名前をお伝えください</div>`;return}
-      LS.set('kq50-me',{bibs:list,at:new Date().toISOString()});if(list.length===1)LS.set('kq50-bib',String(list[0]));showBig(list)};
+      const name=v.normalize('NFKC').replace(/\s+/g,' ').trim();LS.set('kq50-me',{bibs:list,name,at:new Date().toISOString()});if(list.length===1)LS.set('kq50-bib',String(list[0]));showBig(list,name)};
     go.onclick=run;$('#bname').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();run()}})}
-  const my=$('#myBib');if(my)my.onclick=()=>showBig(LS.get('kq50-me',{bibs:[]}).bibs);
+  const my=$('#myBib');if(my)my.onclick=()=>{const me=LS.get('kq50-me',{bibs:[]});showBig(me.bibs,me.name)};
   const rs=$('#bibReset');if(rs)rs.onclick=()=>{try{localStorage.removeItem('kq50-me')}catch(e){}render();setTimeout(()=>$('#bname')&&$('#bname').focus(),0)};
 }
 function route(){return (location.hash||'#top').slice(1)}
