@@ -78,7 +78,12 @@ async function sync() {
       try { res = await C.sendRecord(r, { clk: S.clk }); }
       catch (e) {
         // 権限で断られた記録は、送り直しても通らない。印を付けて次へ進む（CSVには残る）
-        if (e && e.code === 'permission-denied' && canSend()) { Object.assign(r, await C.updateRecord(r.id, { status: 'rejected', rejectedWhy: C.errText(e) })); continue; }
+        if (e && e.code === 'permission-denied' && canSend()) {
+          Object.assign(r, await C.updateRecord(r.id, { status: 'rejected', rejectedWhy: C.errText(e) }));
+          // 本部で停止された端末なら、それ以上は送らない
+          if (!isAdmin()) { const d = await C.myDevice(); if (d && d.active === false) { S.device = { ...S.device, active: false }; await C.metaSet('device:' + C.EVENT_ID, S.device); break; } }
+          continue;
+        }
         throw e;
       }
       if (res.clk != null) { S.clk = res.clk; C.metaSet('clk', res.clk); }
@@ -168,11 +173,12 @@ async function autoJoin() {
 }
 async function join() {
   const m = $('#joinMsg'); const code = $('#jcode').value.trim(); const label = $('#jlabel').value.trim();
-  if (!label) { m.textContent = '端末の名前（例：受付A）を入れてください'; return; }
-  if (!code) { m.textContent = '参加コードを入れてください'; return; }
-  m.textContent = '登録しています…';
-  try { const r = await C.joinWithCode(code, label, 'timer'); S.label = r.label || label; await C.metaSet('label', S.label); S.device = { label: S.label, active: true, role: r.role || 'timer' }; await C.metaSet('device:' + C.EVENT_ID, S.device); m.textContent = ''; watchRemote(); render(); sync(); }
-  catch (e) { m.textContent = C.errText(e); }
+  const say = t => { S.joinMsg = t; const el = $('#joinMsg'); if (el) el.textContent = t; };
+  if (!label) { say('端末の名前（例：ゴール主）を入れてください'); return; }
+  if (!code) { say('参加コードを入れてください'); return; }
+  say('登録しています…');
+  try { const r = await C.joinWithCode(code, label, 'timer'); S.label = r.label || label; await C.metaSet('label', S.label); S.device = { label: S.label, active: true, role: r.role || 'timer' }; await C.metaSet('device:' + C.EVENT_ID, S.device); say(''); watchRemote(); render(); sync(); }
+  catch (e) { say(C.errText(e)); }
 }
 
 /* ---------- 画面 ---------- */
@@ -209,7 +215,7 @@ function render() {
       : `<div class="sub" style="margin-top:6px">計測担当の方は、本部から聞いた参加コードを入れて登録します（Googleアカウントは不要）。受付の方は、本部の「受付用リンク」かQRを開くだけで使えます。記録は、登録していなくても端末に保存されます。</div>
         <div class="row"><input id="jlabel" placeholder="端末の名前（例：受付A）" value="${esc(S.label)}" class="sm"></div>
         <div class="row"><input id="jcode" inputmode="numeric" placeholder="参加コード" autocomplete="off" class="sm"><button class="btn" id="doJoin" ${navigator.onLine ? '' : 'disabled'}>登録</button></div>`}
-      <div class="err" id="joinMsg"></div>
+      <div class="err" id="joinMsg">${esc(S.joinMsg || '')}</div>
       <details style="margin-top:10px"><summary class="sub">本部の方（Googleでログイン）</summary>
         ${isAdmin() ? `<button class="btn sec wide" id="doOut" style="margin-top:6px">ログアウト</button>` : `<button class="btn sec wide" id="doIn" style="margin-top:6px" ${navigator.onLine ? '' : 'disabled'}>Googleでログイン</button>`}
         <div class="err" id="inMsg"></div></details></div>
@@ -260,11 +266,14 @@ function renderLast() {
 }
 function renderCounts() {
   const el = $('#counts'); if (!el) return;
-  const rec = S.recs.filter(r => r.status === 'received' || r.status === 'rejected').length;
-  el.innerHTML = `<div><b>${S.recs.length}</b>端末に保存</div><div><b>${rec}</b>本部に受領</div><div><b style="color:${S.recs.length - rec ? 'var(--wait)' : 'var(--ok)'}">${S.recs.length - rec}</b>未送信</div>`;
+  const rec = S.recs.filter(r => r.status === 'received').length, rej = S.recs.filter(r => r.status === 'rejected').length, un = S.recs.length - rec - rej;
+  el.innerHTML = `<div><b>${S.recs.length}</b>端末に保存</div><div><b>${rec}</b>本部に受領</div><div><b style="color:${un ? 'var(--wait)' : 'var(--ok)'}">${un}</b>未送信</div>`
+    + (rej ? `<div style="grid-column:1/-1;background:#fee2e2;color:var(--bad)"><b>${rej}</b>本部が受け付けなかった記録（CSVで本部に渡すか、本部に確認してから「もう一度送る」）<button class="btn sec" id="doRetry" style="margin-top:6px">もう一度送る</button></div>` : '');
+  const rt = $('#doRetry'); if (rt) rt.onclick = async () => { for (const r of S.recs.filter(x => x.status === 'rejected')) Object.assign(r, await C.updateRecord(r.id, { status: 'saved' })); if (S.device && S.device.active === false && navigator.onLine) { const d = await C.myDevice(); if (d) { S.device = { ...S.device, active: d.active }; await C.metaSet('device:' + C.EVENT_ID, S.device); } } render(); sync(); };
   const m = $('#sendMsg'); if (!m) return;
   m.innerHTML = S.sendErr ? `<span class="err">送れませんでした：${esc(S.sendErr)}</span>` : !navigator.onLine ? '圏外です。記録は端末に保存されます。通信が戻ると自動で送ります'
-    : !canSend() ? '参加コードで登録すると本部に送れます' : S.sending ? '送信中…' : (S.recs.length - rec ? '自動で送ります（15秒ごと）' : 'すべて本部に届いています');
+    : S.device && S.device.active === false ? 'この端末は本部で停止されています。記録は端末に保存されます（CSVで本部に渡してください）'
+    : !canSend() ? '参加コードで登録すると本部に送れます' : S.sending ? '送信中…' : (un ? '自動で送ります（15秒ごと）' : rej ? '送れる記録はすべて本部に届いています' : 'すべて本部に届いています');
 }
 function renderList() {
   const el = $('#list'); if (!el) return;
