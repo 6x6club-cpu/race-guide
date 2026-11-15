@@ -38,6 +38,8 @@ canvas.cert{width:100%;border:1px solid var(--line);border-radius:6px;margin:10p
 #bigbib .chip{display:inline-block;background:#fff;color:var(--acc);border-radius:999px;padding:8px 18px;font-size:20px;font-weight:800;margin:4px}
 #bigbib .who{font-size:clamp(26px,8vw,40px);font-weight:900;line-height:1.25;margin:0 0 14px;word-break:break-all}#bigbib .who small{font-size:.6em;font-weight:700;margin-left:.2em}#bigbib .pk{font-size:15px;font-weight:700;background:rgba(255,255,255,.16);border-radius:10px;padding:8px 12px;margin:10px auto 0;max-width:420px;line-height:1.5}
 .mybib .who{font-size:22px;font-weight:900;line-height:1.3;word-break:break-all}.mybib .who small{font-size:.65em;margin-left:.2em}.mybib .pk{font-size:13px;color:#fff;background:rgba(255,255,255,.16);border-radius:8px;padding:5px 8px;margin:6px auto 2px;display:inline-block}
+#bigbib{justify-content:flex-start}#bigbib>:first-child{margin-top:auto}#bigbib>:last-child{margin-bottom:auto}#bigbib .n{font-size:min(36vw,260px)}#bigbib .n.s{font-size:min(26vw,190px)}
+#bigbib .qr{background:#fff;border-radius:14px;padding:10px;margin:14px auto 0;width:min(52vw,210px)}#bigbib .qr svg{display:block;width:100%;height:auto}#bigbib .qrl{font-size:13px;color:#e2d9f3;margin-top:6px}
 #bigbib .say{font-size:18px;margin:18px 0 22px;line-height:1.5}#bigbib .x{background:#fff;color:var(--acc);border:0;border-radius:12px;padding:14px 40px;font-size:18px;font-weight:800}
 #bigbib .cand{border-top:1px solid rgba(255,255,255,.35);padding:10px 0;width:100%;max-width:420px}
 footer{font-size:12px;color:var(--sub);text-align:center;padding:16px}
@@ -47,10 +49,11 @@ footer{font-size:12px;color:var(--sub);text-align:center;padding:16px}
 <div class="st" id="st">読み込み中…</div>
 <main id="main"></main>
 <footer>大会本部（緊急連絡先）<span id="emg"></span><br>KUSENBU QUEST 50 実行委員会・7trails</footer>
+<script src="qrcode.js"></script>
 <script>
 'use strict';
 const RACE='kusenbu50',CACHE='kq50-guide-v1';
-const BASE_LIST=['./','index.html','manifest.json','data/guide.json','data/notices.json','data/results.json','data/bibs.json'];
+const BASE_LIST=['./','index.html','manifest.json','data/guide.json','data/notices.json','data/results.json','data/bibs.json','qrcode.js'];
 const imgList=()=>[...new Set(((D.guide&&D.guide.sections)||[]).flatMap(s=>[...String(s.body).matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map(m=>m[1])))];
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -149,13 +152,15 @@ async function lookupBib(name){
   const hit=D.bibs.h[(await sha256(D.bibs.salt+'|'+k)).slice(0,16)]||[];
   return Promise.all(hit.map(async e=>Array.isArray(e)?{bib:e[0],name:await openName(e[1],k)}:{bib:e,name:''}));
 }
+/* 受付で読み取る番号のQR（中身は番号だけ。端末の中で作るので圏外でも出る） */
+function qrHTML(bib){try{if(typeof qrcode!=='function')return '';const q=qrcode(0,'M');q.addData(String(bib));q.make();return `<div class="qr">${q.createSvgTag({cellSize:6,margin:2,scalable:true})}</div><div class="qrl">受付ではこのQRを読み取ります</div>`}catch(e){return ''}}
 const PKNOTE='※駐車券を事前に購入した方のみ駐車できます';
 const whoHTML=n=>n?`<div class="who">${esc(n)}<small>さん</small></div>`:'';
 function showBig(list){
   const one=list.length===1,name=list[0]&&list[0].name;
   const el=document.createElement('div');el.id='bigbib';el.setAttribute('role','dialog');
   el.innerHTML=one?(()=>{const b=list[0].bib,i=bibInfo(b);return `${whoHTML(name)}<div class="l">あなたのゼッケン番号</div><div class="n${String(b).length>2?' s':''}">${b}</div>
-    <div>${i.cat?`<span class="chip">${esc(i.cat)}</span>`:''}${i.parkLabel?`<span class="chip">${esc(i.parkLabel)}</span>`:''}</div>${i.parkLabel?`<div class="pk">${PKNOTE}</div>`:''}
+    <div>${i.cat?`<span class="chip">${esc(i.cat)}</span>`:''}${i.parkLabel?`<span class="chip">${esc(i.parkLabel)}</span>`:''}</div>${i.parkLabel?`<div class="pk">${PKNOTE}</div>`:''}${qrHTML(b)}
     <div class="say">受付と駐車場の入口で、<br>この画面をスタッフに見せてください</div>`})()
     :whoHTML(name)+`<div class="l">同じお名前の方が${list.length}人います</div>`+list.map(x=>{const b=x.bib,i=bibInfo(b);return `<div class="cand"><div class="n s" style="font-size:min(22vw,120px);margin:0">${b}</div><span class="chip" style="font-size:15px">${esc(i.cat||'')}</span><span class="chip" style="font-size:15px">${esc(i.parkLabel||'')}</span></div>`}).join('')+`<div class="pk">${PKNOTE}</div><div class="say">受付と駐車場の入口で、この画面と<br>お名前をスタッフにお伝えください</div>`;
   el.innerHTML+=`<button class="x">閉じる</button>`;
