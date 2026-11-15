@@ -64,7 +64,18 @@ async function getJSON(name){
 async function load(){
   const [g,n,r]=await Promise.all(['guide','notices','results'].map(getJSON));
   D.guide=g;D.notices=n;D.results=r;render();
+  refreshSaved();
 }
+/* 保存済みの端末は、通信できたときに控え（ページ・図・データ）を最新に入れ替える */
+async function refreshSaved(){
+  const sv=LS.get('kq50-saved',null);if(!sv||D.src.guide!=='net'||!('caches' in window))return;
+  try{const c=await caches.open(CACHE);const list=[...BASE_LIST,...imgList()];
+    for(const u of list){const r=await fetch(u+(u.startsWith('data/')?'?t='+Date.now():''),{cache:'no-store'});if(r.ok&&!r.headers.get('X-Saved-Copy'))await c.put(u,r)}
+    sv.refreshedAt=new Date().toISOString();sv.guideUpdatedAt=D.guide.updatedAt;LS.set('kq50-saved',sv);
+    const m=document.querySelector('#savedMsg');if(m&&!m.querySelector('.err'))m.innerHTML=savedText(sv);
+  }catch(e){}
+}
+function savedText(sv){return `<b>保存済み</b>（${fmt(sv.at)} に保存${sv.refreshedAt?`、${fmt(sv.refreshedAt)} に最新へ更新`:''}。案内の最終更新 ${fmt(sv.guideUpdatedAt)}）<br>圏外でも、このページを開けば案内・地図を見られます。`}
 function statusLine(){
   const st=$('#st'),sv=LS.get('kq50-saved',null);
   const on=D.src.notices==='net';
@@ -123,7 +134,7 @@ function renderTop(){
   <div class="card"><dl class="sum">${g.summary.map(x=>`<dt>${esc(x.k)}</dt><dd>${esc(x.v)}${x.sub?`<small>${esc(x.sub)}</small>`:''}${x.links?`<div class="links">${x.links.map(([t,u])=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}の地図</a>`).join('')}</div>`:''}</dd>`).join('')}</dl></div>
   <div class="nav">${g.sections.map(s=>`<a href="#${s.id}">${esc(s.title)}</a>`).join('')}</div>
   <div class="card"><button class="btn" id="saveBtn">当日の案内を保存</button>
-   <div class="saved" id="savedMsg">${sv?`<b>保存済み</b>（${fmt(sv.at)} に保存。案内の最終更新 ${fmt(sv.guideUpdatedAt)}）<br>圏外でも、このページを開けば案内・地図を見られます。`:'通信できる場所で一度押しておくと、圏外や機内モードでもこのページを開けます。'}</div></div>
+   <div class="saved" id="savedMsg">${sv?savedText(sv):'通信できる場所で一度押しておくと、圏外や機内モードでもこのページを開けます。'}</div></div>
   <div class="nav after"><a href="#results">リザルト</a><a href="#cert">記録証</a></div>
   ${pub?'':'<p class="muted" style="text-align:center">リザルトと記録証は、大会後に公開します</p>'}`;
   $('#saveBtn').onclick=saveForOffline;
