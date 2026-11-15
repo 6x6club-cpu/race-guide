@@ -136,19 +136,28 @@ function normName(s){
   return s;
 }
 function bibInfo(bib){const r=((D.bibs&&D.bibs.rules)||[]).find(x=>bib>=x.from&&bib<=x.to);return r||{}}
+/* 正式表記は「正しい名前を入れた人だけが読める」よう暗号化してある（鍵は入力した名前から作る） */
+async function openName(enc,k){
+  try{const b=Uint8Array.from(atob(enc.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
+    const raw=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('name|'+D.bibs.salt+'|'+k));
+    const key=await crypto.subtle.importKey('raw',raw,'AES-GCM',false,['decrypt']);
+    return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:b.slice(0,12)},key,b.slice(12)));
+  }catch(e){return ''}
+}
 async function lookupBib(name){
   const k=normName(name);if(!k||!D.bibs)return [];
-  return D.bibs.h[(await sha256(D.bibs.salt+'|'+k)).slice(0,16)]||[];
+  const hit=D.bibs.h[(await sha256(D.bibs.salt+'|'+k)).slice(0,16)]||[];
+  return Promise.all(hit.map(async e=>Array.isArray(e)?{bib:e[0],name:await openName(e[1],k)}:{bib:e,name:''}));
 }
 const PKNOTE='※駐車券を事前に購入した方のみ駐車できます';
 const whoHTML=n=>n?`<div class="who">${esc(n)}<small>さん</small></div>`:'';
-function showBig(list,name){
-  const one=list.length===1;
+function showBig(list){
+  const one=list.length===1,name=list[0]&&list[0].name;
   const el=document.createElement('div');el.id='bigbib';el.setAttribute('role','dialog');
-  el.innerHTML=one?(()=>{const b=list[0],i=bibInfo(b);return `${whoHTML(name)}<div class="l">あなたのゼッケン番号</div><div class="n${String(b).length>2?' s':''}">${b}</div>
+  el.innerHTML=one?(()=>{const b=list[0].bib,i=bibInfo(b);return `${whoHTML(name)}<div class="l">あなたのゼッケン番号</div><div class="n${String(b).length>2?' s':''}">${b}</div>
     <div>${i.cat?`<span class="chip">${esc(i.cat)}</span>`:''}${i.parkLabel?`<span class="chip">${esc(i.parkLabel)}</span>`:''}</div>${i.parkLabel?`<div class="pk">${PKNOTE}</div>`:''}
-    <div class="say">受付で、この画面を<br>スタッフに見せてください</div>`})()
-    :whoHTML(name)+`<div class="l">同じお名前の方が${list.length}人います</div>`+list.map(b=>{const i=bibInfo(b);return `<div class="cand"><div class="n s" style="font-size:min(22vw,120px);margin:0">${b}</div><span class="chip" style="font-size:15px">${esc(i.cat||'')}</span><span class="chip" style="font-size:15px">${esc(i.parkLabel||'')}</span></div>`}).join('')+`<div class="pk">${PKNOTE}</div><div class="say">受付でお名前もお伝えください</div>`;
+    <div class="say">受付と駐車場の入口で、<br>この画面をスタッフに見せてください</div>`})()
+    :whoHTML(name)+`<div class="l">同じお名前の方が${list.length}人います</div>`+list.map(x=>{const b=x.bib,i=bibInfo(b);return `<div class="cand"><div class="n s" style="font-size:min(22vw,120px);margin:0">${b}</div><span class="chip" style="font-size:15px">${esc(i.cat||'')}</span><span class="chip" style="font-size:15px">${esc(i.parkLabel||'')}</span></div>`}).join('')+`<div class="pk">${PKNOTE}</div><div class="say">受付と駐車場の入口で、この画面と<br>お名前をスタッフにお伝えください</div>`;
   el.innerHTML+=`<button class="x">閉じる</button>`;
   el.querySelector('.x').onclick=()=>{el.remove();render()};
   document.querySelector('#bigbib')?.remove();document.body.appendChild(el);
@@ -156,9 +165,9 @@ function showBig(list,name){
 function bibCardHTML(){
   if(!D.bibs)return '';
   const me=LS.get('kq50-me',null);
-  if(me&&me.bibs&&me.bibs.length){
-    const b=me.bibs,i=bibInfo(b[0]);
-    return `<button class="mybib" id="myBib">${me.name?`<div class="who">${esc(me.name)}<small>さん</small></div>`:''}<div class="l">あなたのゼッケン番号</div><div class="n">${b.join(' / ')}</div><div class="p">${b.length===1?esc(i.parkLabel||''):''}</div>${b.length===1&&i.parkLabel?`<div class="pk">${PKNOTE}</div><br>`:''}<div class="tap">タップで大きく表示（受付で見せてください）</div></button>
+  if(me&&me.list&&me.list.length){
+    const b=me.list.map(x=>x.bib),i=bibInfo(b[0]);
+    return `<button class="mybib" id="myBib">${me.name?`<div class="who">${esc(me.name)}<small>さん</small></div>`:''}<div class="l">あなたのゼッケン番号</div><div class="n">${b.join(' / ')}</div><div class="p">${b.length===1?esc(i.parkLabel||''):''}</div>${b.length===1&&i.parkLabel?`<div class="pk">${PKNOTE}</div><br>`:''}<div class="tap">タップで大きく表示（受付・駐車場の入口で見せてください）</div></button>
     <div style="text-align:right;margin:-8px 0 8px"><button class="mini" id="bibReset">別のお名前で調べる</button></div>`;
   }
   return `<div class="card bibq"><h2>ゼッケン番号を確認</h2>
@@ -171,9 +180,9 @@ function wireBib(){
   if(go){const run=async()=>{const v=$('#bname').value.trim(),m=$('#bmsg');if(!v){m.innerHTML='<div class="err">お名前を入れてください</div>';return}
       const list=await lookupBib(v);
       if(!list.length){m.innerHTML=`<div class="err">見つかりませんでした。<br>・姓と名をどちらも入れてください<br>・漢字の字体が違うと見つからないことがあります。カタカナかローマ字でもお試しください<br>・見つからないときは、受付でお名前をお伝えください</div>`;return}
-      const name=v.normalize('NFKC').replace(/\s+/g,' ').trim();LS.set('kq50-me',{bibs:list,name,at:new Date().toISOString()});if(list.length===1)LS.set('kq50-bib',String(list[0]));showBig(list,name)};
+      const name=list[0].name;LS.set('kq50-me',{list,name,at:new Date().toISOString()});if(list.length===1)LS.set('kq50-bib',String(list[0].bib));showBig(list)};
     go.onclick=run;$('#bname').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();run()}})}
-  const my=$('#myBib');if(my)my.onclick=()=>{const me=LS.get('kq50-me',{bibs:[]});showBig(me.bibs,me.name)};
+  const my=$('#myBib');if(my)my.onclick=()=>showBig(LS.get('kq50-me',{list:[]}).list);
   const rs=$('#bibReset');if(rs)rs.onclick=()=>{try{localStorage.removeItem('kq50-me')}catch(e){}render();setTimeout(()=>$('#bname')&&$('#bname').focus(),0)};
 }
 function route(){return (location.hash||'#top').slice(1)}
