@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="app-build" content="race-app bc7edd592460713ca4de5e628544e244b07d3838 release built 2026-11-17T01:43+09:00">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#1f3b2d">
+<title>今日の担当｜KUSENBU QUEST 50 スタッフ</title>
+<style>
+:root{--ink:#16201a;--sub:#5b6660;--line:#d5ddd8;--bg:#eef2ef;--acc:#1f3b2d;--hi:#c2410c;--ok:#15803d;--okbg:#dcfce7;--wait:#92400e;--waitbg:#fef3c7;--bad:#b91c1c}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;font:16px/1.55 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;color:var(--ink);background:var(--bg)}
+header{background:var(--acc);color:#fff;padding:12px 16px;padding-top:max(12px,env(safe-area-inset-top))}
+header .ev{font-size:12px;opacity:.8}header .nm{font-size:20px;font-weight:800}header .rl{font-size:14px;opacity:.9}
+main{max-width:560px;margin:0 auto;padding:10px 10px 30px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 10px}
+.card h2{margin:0 0 6px;font-size:13px;color:var(--sub);font-weight:700;letter-spacing:.04em}
+.st{font-size:12.5px;color:var(--sub);padding:2px 4px 8px}.st b{color:var(--ink)}.st .off{color:var(--wait);font-weight:800}
+.now{border:2px solid var(--acc)}.next{border:3px solid var(--hi)}
+.big{font-size:24px;font-weight:800;line-height:1.3}.tm{font-size:28px;font-weight:900;font-variant-numeric:tabular-nums;color:var(--hi)}
+.now .tm{color:var(--acc);font-size:20px}
+.kv{margin:6px 0 0;font-size:15px}.kv div{margin:2px 0}.kv b{display:inline-block;min-width:4.5em;color:var(--sub);font-weight:700;font-size:13px}
+.radio{display:block;margin-top:6px;background:#eef2ff;color:#1e3a8a;border-radius:8px;padding:6px 9px;font-weight:700;font-size:14.5px}
+.cond{display:block;margin-top:6px;background:var(--waitbg);color:var(--wait);border-radius:8px;padding:6px 9px;font-weight:700;font-size:14.5px}
+.btns{display:grid;gap:8px}.btn{display:block;text-align:center;text-decoration:none;font:inherit;font-weight:800;font-size:17px;border:0;border-radius:12px;padding:14px;background:var(--acc);color:#fff}
+.btn.sec{background:#fff;color:var(--acc);border:2px solid var(--acc)}.btn.msg{background:#0866ff}
+ol.steps{margin:6px 0 10px;padding-left:1.4em}ol.steps li{margin:3px 0}
+.it{display:grid;grid-template-columns:4.6em 1fr;gap:8px;padding:9px 0;border-top:1px solid var(--line)}.it:first-child{border-top:0}
+.it .t{font-weight:800;font-variant-numeric:tabular-nums;font-size:15px}.it .t small{display:block;font-weight:600;color:var(--sub)}
+.it .d{font-weight:700}.it .x{font-size:13.5px;color:var(--sub)}.it.past{opacity:.45}.it.cur{background:#f0fdf4;border-radius:8px;outline:2px solid var(--ok);outline-offset:-1px;padding-left:4px}
+.it .radio,.it .cond{font-size:13px;padding:4px 7px;margin-top:4px}
+.kind{display:inline-block;font-size:11px;font-weight:800;border-radius:5px;padding:0 6px;margin-right:4px;background:#e5e7eb;vertical-align:1px}
+.k-assembly{background:#dbeafe}.k-move{background:#f3f4f6}.k-teardown{background:#fee2e2}.k-setup{background:#e0e7ff}.k-brief{background:#fae8ff}.k-break{background:#ecfccb}.k-handover{background:#e0f2fe}
+.w{color:var(--bad);font-weight:700}.sub{color:var(--sub);font-size:13px}
+footer{text-align:center;color:var(--sub);font-size:11.5px;padding:10px}
+</style></head>
+<body>
+<header><div class="ev">KUSENBU QUEST 50 スタッフ</div><div class="nm" id="nm">今日の担当</div><div class="rl" id="rl"></div></header>
+<main id="main"><div class="card">読み込み中…</div></main>
+<footer id="ft">版 race-app bc7edd5（11/17 01:43 作成）</footer>
+<script>
+/* スタッフ用「今日の担当」
+   ・リンク（#k=…）を開くと、本部が反映した自分1人分の担当表を読む（他の人の分は読めない：サーバー側のルールで制限）
+   ・一度読めば端末に保存し、圏外でも表示する。通信が戻ったら最新版を取り直す
+   ・氏名入りのデータはこのページのファイルには含めない（本部のデータベースからリンクの持ち主にだけ届く） */
+(function(){
+const API='https://firestore.googleapis.com/v1/projects/trails-race/databases/(default)/documents/events/';
+const KEY='AIzaSyAfuBxAeCQOhvdOurFOxpRysamQpz8lUJk';
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+const tmin=t=>{const m=String(t||'').match(/^(\d{1,2}):(\d{2})$/);return m?(+m[1])*60+(+m[2]):null};
+const pad=n=>String(n).padStart(2,'0');
+const mdhm=iso=>{if(!iso)return '—';const d=new Date(iso);return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${pad(d.getMinutes())}`};
+const KIND={duty:'担当',assembly:'集合',move:'移動',break:'休憩',teardown:'撤収',setup:'設営',brief:'説明',handover:'無線'};
+// リンク：#k=トークン（&ev=大会ID、&now=7:30 は確認用）。トークンは端末に控え、アドレス欄からは消さない（ホーム画面に追加しても開けるように）
+const hp=new URLSearchParams(location.hash.replace(/^#/,''));
+let tok=hp.get('k')||LS.get('staff-k',null);
+const ev=hp.get('ev')||LS.get('staff-ev','kq50-2026');
+const testNow=hp.get('now');
+if(tok){LS.set('staff-k',tok);LS.set('staff-ev',ev)}
+const CK='staff-view:'+ev+':'+tok;
+let V=LS.get(CK,null),msg='',gone=false,fetching=false;
+
+async function fetchView(){
+  if(!tok||fetching)return;fetching=true;
+  try{
+    const r=await fetch(API+encodeURIComponent(ev)+'/staffview/'+encodeURIComponent(tok)+'?key='+KEY,{cache:'no-store'});
+    if(r.status===404){gone=true;LS.del(CK);V=null;msg='';return}
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const j=await r.json();const v=JSON.parse(j.fields.j.stringValue);
+    v._pub=j.fields.pub&&j.fields.pub.timestampValue||j.updateTime;v._got=new Date().toISOString();
+    V=v;gone=false;msg='';LS.set(CK,V);
+  }catch(e){msg=navigator.onLine?'本部のデータに接続できませんでした。保存版を表示しています':'圏外です。保存版を表示しています'}
+  finally{fetching=false;render()}
+}
+function nowInfo(){
+  // 大会当日だけ「いま」「次」を時刻で判断。前日までは当日の最初の予定を「次」として見せる
+  if(testNow&&tmin(testNow)!=null)return {day:true,t:tmin(testNow),test:true};
+  const d=new Date();const ymd=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  return {day:!V||!V.raceDate||ymd===V.raceDate,t:d.getHours()*60+d.getMinutes()};
+}
+const endOf=x=>tmin(x.e)??(tmin(x.s)!=null?tmin(x.s)+30:null);
+function radioHTML(x){return (x.r||[]).map(r=>`<span class="radio">📻 ${esc(r)}</span>`).join('')}
+function condHTML(x){return x.c?`<span class="cond">開始の条件：${esc(x.c)}</span>`:''}
+function timeText(x){return x.s?`${x.s}${x.e?'–'+x.e:'〜'}`:'時刻未定'}
+function bigCard(x,cls,label){
+  if(!x)return '';
+  const where=x.a||x.p;
+  return `<div class="card ${cls}"><h2>${label}</h2>
+   <div class="tm">${esc(timeText(x))}</div>
+   <div class="big">${esc(x.d)}</div>
+   <div class="kv">${where?`<div><b>場所</b>${esc(where)}</div>`:''}${x.m?`<div><b>一緒に</b>${esc(x.m)}</div>`:''}${x.n?`<div><b>メモ</b>${esc(x.n)}</div>`:''}</div>
+   ${condHTML(x)}${radioHTML(x)}</div>`;
+}
+function render(){
+  const m=$('#main');
+  if(!tok){m.innerHTML=`<div class="card"><div class="big">リンクが正しくありません</div><p>本部からMessengerで届いた「今日の担当」のリンクを、もう一度開いてください。</p></div>`;return}
+  if(gone){$('#nm').textContent='今日の担当';$('#rl').textContent='';
+    m.innerHTML=`<div class="card"><div class="big">このリンクは使えなくなりました</div><p>本部で止めたか、新しいリンクに変わりました。Messengerで本部に確認してください。</p></div>`;return}
+  if(!V){m.innerHTML=`<div class="card">${fetching||!msg?'読み込み中…':esc(msg)+'<p class="sub">一度、電波のある所で開くと、その後は圏外でも見られます。</p>'}</div>`;return}
+  $('#nm').textContent=V.name+' さん';$('#rl').textContent=V.role||'';document.title=`${V.name}さんの担当｜KQ50`;
+  const ni=nowInfo();const its=V.items||[];
+  const cur=ni.day?its.filter(x=>x.k!=='handover'&&tmin(x.s)!=null&&tmin(x.s)<=ni.t&&(x.e?ni.t<tmin(x.e):true)).slice(-1)[0]:null;
+  const next=(ni.day?its.find(x=>tmin(x.s)!=null&&tmin(x.s)>ni.t):its.find(x=>tmin(x.s)!=null))||null;
+  const nextAsm=next&&next.k!=='assembly'?(ni.day?its.find(x=>x.k==='assembly'&&tmin(x.s)>ni.t):null):null;
+  const L=V.links||{};const rep=V.report;
+  m.innerHTML=`
+  <div class="st">${ni.test?`<b>確認用：${esc(testNow)}として表示</b>　`:''}${msg?`<span class="off">${esc(msg)}</span><br>`:''}保存版：本部の更新 <b>${mdhm(V._pub)}</b>／この端末で取得 ${mdhm(V._got)}</div>
+  ${!ni.day?`<div class="card"><b>大会当日（${esc((V.raceDate||'').replace(/^\d{4}-0?(\d+)-0?(\d+)$/,'$1月$2日'))}）の予定です。</b><div class="sub">当日は、いまの担当と次にすることが時刻に合わせて変わります。</div></div>`:''}
+  ${cur?bigCard(cur,'now','いまの担当'):''}
+  ${next?bigCard(next,'next',ni.day?'次にすること':'最初にすること'):(ni.day?'<div class="card"><div class="big">今日の予定はこれで終わりです</div><div class="sub">おつかれさまでした。</div></div>':'')}
+  ${nextAsm?`<div class="card"><h2>次の集合</h2><b>${esc(nextAsm.s)}</b> ${esc(nextAsm.a||nextAsm.p||'')}</div>`:''}
+  ${(L.ck||L.timer)?`<div class="card"><h2>受付・計測</h2><div class="btns">${L.ck?`<a class="btn" href="${esc(L.ck)}">受付を開く</a>`:''}${L.timer?`<a class="btn" href="${esc(L.timer)}">計測を開く</a>`:''}</div>
+    <div class="sub" style="margin-top:6px">開いた画面の上の「今日の担当に戻る」で、ここに戻れます。記録は端末に残ります。</div></div>`:''}
+  ${rep?`<div class="card"><h2>位置・リタイア・事故の報告（${esc(rep.team||'')}）</h2>
+    <ol class="steps"><li>ジオグラフィカで現在地を開き、「共有」を押す</li><li>送り先にMessengerの <b>${esc(rep.group||'報告グループ')}</b> を選んで送る</li><li>リタイア・事故も、同じグループに書いて送る（急ぐときは電話も）</li></ol>
+    ${rep.url?`<a class="btn msg" href="${esc(rep.url)}">報告先のMessengerを開く</a>`:'<div class="w">報告先のリンクは本部から届きます</div>'}
+    <div class="sub" style="margin-top:6px">このページから位置を送る必要はありません。</div></div>`:''}
+  <div class="card"><h2>一日の予定</h2>${its.map(x=>{const past=ni.day&&tmin(x.s)!=null&&endOf(x)!=null&&endOf(x)<=ni.t&&x!==cur;const isCur=x===cur;
+    return `<div class="it ${past?'past':''} ${isCur?'cur':''}"><div class="t">${esc(x.s||'未定')}${x.e?`<small>〜${esc(x.e)}</small>`:''}</div>
+     <div><div class="d"><span class="kind k-${esc(x.k)}">${esc(KIND[x.k]||'担当')}</span>${esc(x.d)}</div>
+     ${(x.a||x.p)?`<div class="x">${esc(x.a||x.p)}</div>`:''}${x.m?`<div class="x">一緒に：${esc(x.m)}</div>`:''}${x.n?`<div class="x">${esc(x.n)}</div>`:''}${condHTML(x)}${radioHTML(x)}</div></div>`}).join('')}</div>
+  <div class="card sub">${esc(V.hq||'本部への連絡はMessengerのスタッフグループへ')}。予定の変更もMessengerでお知らせします。このページは、通信できるときに開き直すと最新版になります。</div>`;
+}
+render();fetchView();
+addEventListener('online',fetchView);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')fetchView()});
+setInterval(()=>{if(document.visibilityState==='visible'){render();if(navigator.onLine)fetchView()}},120000);
+addEventListener('hashchange',()=>location.reload());
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+})();
+</script>
+</body></html>

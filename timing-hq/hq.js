@@ -3,7 +3,7 @@
 import * as C from './common.js';
 const { $, $$, esc, hms, hm, dur, ymdhms } = C;
 
-const S = { notices: [], ev: null, evList: [], user: null, known: false, recs: [], meta: null, starts: {}, devices: [], code: null, err: '', imp: null, impMsg: '', tab: 'ck', editStart: null };
+const S = { sv: [], svIn: null, svMsg: '', notices: [], ev: null, evList: [], user: null, known: false, recs: [], meta: null, starts: {}, devices: [], code: null, err: '', imp: null, impMsg: '', tab: 'ck', editStart: null };
 let unsubs = [];
 const ptLabel = k => k === 'VOID' ? '取消' : ((S.ev && S.ev.points.find(p => p.k === k)) || { label: k }).label;
 const isAdmin = () => S.user && !S.user.isAnonymous;
@@ -14,7 +14,7 @@ function derived() {
   return { vo, live, cnt, key };
 }
 function render() {
-  const keep = ['stTime', 'stWhy', 'rsId', 'ntText'].map(id => [id, $('#' + id) && $('#' + id).value]);
+  const keep = ['stTime', 'stWhy', 'rsId', 'ntText', 'svText'].map(id => [id, $('#' + id) && $('#' + id).value]);
   render0();
   keep.forEach(([id, v]) => { const el = $('#' + id); if (el && v != null) el.value = v; });
 }
@@ -28,16 +28,17 @@ function render0() {
   }
   const { vo, live, cnt, key } = derived();
   const fromCache = S.meta && S.meta.fromCache;
-  const tabs = [['notice', 'お知らせ'], ['ck', '受付'], ['course', 'コース上の人'], ['start', 'スタート時刻'], ['rec', '記録・ゴールタイム'], ['dev', '参加コード・端末'], ['csv', 'CSV']];
+  const tabs = [['notice', 'お知らせ'], ['ck', '受付'], ['course', 'コース上の人'], ['start', 'スタート時刻'], ['rec', '記録・ゴールタイム'], ['dev', '参加コード・端末'], ['staff', 'スタッフ担当'], ['csv', 'CSV']];
+  const hqApp = '<a class="sub" href="https://claude.ai/artifact/H3Yeu1q4Z4CeWKWm1wsA59" target="_blank" rel="noopener">本部統括アプリ（名簿・担当・地図）を開く ↗</a>';
   m.innerHTML = `
   <div class="card"><div class="row" style="justify-content:space-between">
     <div class="row"><select id="evSel">${S.evList.map(e => `<option value="${esc(e.id)}" ${e.id === C.EVENT_ID ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
       <span class="tag ${fromCache ? 'w' : 'ok'}">${fromCache ? '本部に接続中…' : '接続中・自動更新'}</span></div>
-    <div class="row"><span class="sub">${esc(S.user.email)}</span><button class="btn sec" id="out">ログアウト</button></div></div>
+    <div class="row">${hqApp}<span class="sub">${esc(S.user.email)}</span><button class="btn sec" id="out">ログアウト</button></div></div>
     ${S.err ? `<div class="err">${esc(S.err)}</div>` : ''}
     <div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div></div>
   <div id="body"></div>`;
-  $('#body').innerHTML = ({ notice: noticeHTML, ck: ckHTML, course: courseHTML, start: startHTML, rec: recHTML, dev: devHTML, csv: csvHTML }[S.tab])(live, vo, cnt, key);
+  $('#body').innerHTML = ({ notice: noticeHTML, ck: ckHTML, course: courseHTML, start: startHTML, rec: recHTML, dev: devHTML, staff: staffHTML, csv: csvHTML }[S.tab])(live, vo, cnt, key);
   $('#out').onclick = () => C.logout();
   $('#evSel').onchange = e => useEvent(e.target.value);
   $$('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); });
@@ -194,6 +195,27 @@ function cpCard() {
     ${ld ? '読み込み中…' : !code ? '<button class="btn" data-new="cp">CP担当用リンクを作る</button>' : cps.map(p => { const link = C.roleLink('cp', code, p.k); return `<div class="row" style="align-items:flex-start;border-top:1px solid var(--line);padding-top:8px;margin-top:8px"><div class="qrbox" style="width:130px">${qrSVG(link)}</div><div style="flex:1;min-width:240px"><b>${esc(p.label)}</b>${p.cutoff ? `　<span class="sub">関門 ${hm(p.cutoff)}</span>` : ''}<div class="link">${esc(link)}</div>
       <div class="row" style="margin-top:6px"><button class="btn" data-copycp="${esc(p.k)}">リンクをコピー</button><button class="btn sec" data-printcp="${esc(p.k)}">QRを印刷</button></div></div></div>`; }).join('') + '<p class="sub">「リンクを作り直す」で、すべてのCPのリンクがまとめて新しくなります（登録済みの端末はそのまま）。</p><button class="btn sec" data-new="cp">リンクを作り直す</button>'}</div>`;
 }
+/* ---- スタッフ担当（スタッフ用「今日の担当」へ反映） ---- */
+function staffHTML() {
+  const b = S.svIn, cur = S.sv, curT = new Set(cur.map(c => c.tok));
+  const nT = b ? Object.keys(b.views) : [];
+  const add = nT.filter(t => !curT.has(t)).length, upd = nT.length - add, del = b ? cur.filter(c => !b.views[c.tok]).length : 0;
+  return `<div class="card"><h3>スタッフ用「今日の担当」に反映する</h3>
+    <p class="sub" style="margin-top:0">本部統括アプリの「本部：スタッフ用リンク」で「スタッフ用ページへ送る内容をコピー」し、下に貼り付けて「反映」します。予定や時刻を直したときも同じ手順です。スタッフの画面は、通信できるときに最新版を取り直します。</p>
+    <textarea id="svText" rows="3" placeholder="ここに貼り付け" style="width:100%;font:inherit;padding:8px;border:2px solid var(--line);border-radius:8px"></textarea>
+    <div class="row" style="margin-top:6px"><button class="btn sec" id="svRead">読み取って確認</button>
+    ${b ? `<span>反映すると：<b>${nT.length}人分</b>（新しく ${add}・更新 ${upd}）${del ? `、<b class="err">${del}人分のリンクを止める</b>` : ''}　作成 ${esc((b.made || '').replace('T', ' ').slice(5, 16))}</span><button class="btn" id="svGo">反映</button>` : ''}</div>
+    ${b && b.skipped && b.skipped.length ? `<div class="sub">リンク未発行・停止中：${b.skipped.map(esc).join('、')}</div>` : ''}
+    ${b && !b.msgr && Object.values(b.views).some(v => v.o && v.o.report) ? '<div class="err">報告先のMessengerのリンクが未設定です（本部統括アプリの「本部：スタッフ用リンク」で設定）</div>' : ''}
+    <div class="sub" id="svMsg">${esc(S.svMsg)}</div></div>
+  <div class="card"><h3>いま開けるリンク（${cur.length}人）</h3>
+    <table><tr><th>氏名</th><th>反映</th><th>受付・計測・報告</th><th></th></tr>
+    ${cur.map(c => { let v = {}; try { v = JSON.parse(c.j); } catch (e) {} const L = v.links || {};
+      return `<tr><td>${esc(c.name)}</td><td class="sub">${c.pub && c.pub.toDate ? hm(c.pub.toDate().toISOString()) : '…'}</td>
+      <td class="sub">${[L.ck ? '受付' : '', L.timer ? '計測' : '', v.report ? '報告（' + esc(v.report.team) + '）' : ''].filter(Boolean).join('・') || '—'}</td>
+      <td><a class="btn sec" href="${esc(C.STAFF_PAGE + '#k=' + c.tok + (C.EVENT_ID !== 'kq50-2026' ? '&ev=' + C.EVENT_ID : ''))}" target="_blank" rel="noopener">開く</a> <button class="btn sec" data-svstop="${esc(c.tok)}">すぐ止める</button></td></tr>`; }).join('') || '<tr><td colspan="4" class="sub">まだありません</td></tr>'}
+    </table><div class="sub">「すぐ止める」を押すと、その人のリンクはすぐ開けなくなります（本部統括アプリ側でも「止める」か「再発行」をしておいてください）。</div></div>`;
+}
 function devHTML() {
   const ld = S.code == null;
   return linkCard('ck') + linkCard('sweep') + cpCard() + `
@@ -228,7 +250,21 @@ function impHTML() {
     <button class="btn" id="impGo" style="margin-top:8px">届いていない ${miss.length} 件を登録する</button>` : '<div class="sub">すべて本部に届いています。登録するものはありません。</div>'}
     ${S.impMsg ? `<div class="sub" style="margin-top:6px">${esc(S.impMsg)}</div>` : ''}`;
 }
+function bindStaff() {
+  const r = $('#svRead'); if (!r) return;
+  r.onclick = () => { try { const b = JSON.parse($('#svText').value.trim()); if (b.kind !== '7trails-staff-bundle' || !b.views) throw new Error(); if (b.ev && b.ev !== C.EVENT_ID) { S.svMsg = `貼り付けた内容は ${b.ev} 用です。上で大会を切り替えてください`; S.svIn = null; } else { S.svIn = b; S.svMsg = ''; } } catch (e) { S.svIn = null; S.svMsg = '読み取れませんでした。本部統括アプリでコピーした内容を、そのまま貼り付けてください'; } render(); };
+  const g = $('#svGo'); if (g) g.onclick = async () => {
+    const b = S.svIn; const del = S.sv.filter(c => !b.views[c.tok]).length;
+    if (del && !confirm(`${del}人分のリンクが開けなくなります。よろしいですか？`)) return;
+    g.disabled = true; S.svMsg = '反映中…'; render();
+    try { const codes = S.code || await C.getJoinCodes(); const x = await C.publishStaffBundle(b, S.sv, codes); S.svIn = null; S.svMsg = `反映しました（${x.set}人分${x.del ? `、${x.del}人分を停止` : ''}）。${new Date().toLocaleTimeString('ja-JP')}`; }
+    catch (e) { S.svMsg = '反映できませんでした：' + C.errText(e); }
+    render();
+  };
+  $$('[data-svstop]').forEach(b => b.onclick = async () => { if (!confirm('このリンクをすぐ止めます。よろしいですか？')) return; try { await C.stopStaffView(b.dataset.svstop); } catch (e) { alert(C.errText(e)); } });
+}
 function bind() {
+  bindStaff();
   const ng = $('#ntGo'); if (ng) ng.onclick = async () => {
     const t = $('#ntText').value.trim(), imp = $('#ntImp').checked; if (!t) { $('#ntMsg').textContent = 'お知らせの文を入れてください'; return; }
     if (!confirm(`次のお知らせを選手向けに公開します。よろしいですか？\n\n${imp ? '【重要】' : ''}${t}`)) return;
@@ -297,7 +333,7 @@ async function readCSV(f) {
 }
 async function useEvent(id) {
   C.setEventId(id); try { localStorage.setItem('hq-ev', id); } catch (e) {}
-  S.ev = await C.loadEvent(id); S.recs = []; S.starts = {}; S.devices = []; S.code = null; S.notices = []; S.resetAt = null; S.resetMsg = ''; S.imp = null; S.impMsg = ''; S.err = '';
+  S.ev = await C.loadEvent(id); S.recs = []; S.starts = {}; S.devices = []; S.code = null; S.notices = []; S.sv = []; S.svIn = null; S.svMsg = ''; S.resetAt = null; S.resetMsg = ''; S.imp = null; S.impMsg = ''; S.err = '';
   unsubs.forEach(f => f()); unsubs = [];
   if (isAdmin()) {
     const er = e => { S.err = '読めません：' + C.errText(e); render(); };
@@ -306,6 +342,7 @@ async function useEvent(id) {
     unsubs.push(C.watchDevices(ds => { S.devices = ds; render(); }, er));
     unsubs.push(C.watchReset(ep => { S.resetAt = ep; render(); }, () => {}));
     unsubs.push(C.watchNotices(ns => { S.notices = ns; render(); }, er));
+    unsubs.push(C.watchStaffViews(v => { S.sv = v.sort((a, b) => String(a.name).localeCompare(String(b.name), 'ja')); render(); }, er));
     C.getJoinCodes().then(c => { S.code = c; render(); }).catch(er);
   }
   render();

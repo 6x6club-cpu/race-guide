@@ -309,3 +309,36 @@ export function errText(e) {
   if (c === 'auth/unauthorized-domain') return 'このページのドメインがFirebaseで許可されていません（承認済みドメインを確認）';
   return (e && e.message) || String(e);
 }
+
+/* ---- スタッフ用「今日の担当」（staffview/{個別リンクの文字列}） ----
+   本部統括アプリで作った「スタッフ用ページへ送る内容」を貼り付けて反映する。
+   読めるのはリンクの文字列を知っている人だけ（1件ずつの取得のみ。一覧は本部だけ） */
+export function watchStaffViews(cb, onErr) {
+  const { db } = firebase();
+  return FB.onSnapshot(FB.collection(db, evPath('staffview')), s => cb(s.docs.map(d => ({ tok: d.id, ...d.data() }))), onErr);
+}
+export const STAFF_PAGE = location.origin + '/staff/';
+/** 送る内容（bundle）→ 反映。links：受付・計測を開くURLをここで付ける（コードは本部のデータベースにだけある） */
+export async function publishStaffBundle(bundle, current, codes) {
+  const { db } = firebase();
+  const toks = Object.keys(bundle.views || {});
+  const ops = [];
+  for (const tok of toks) {
+    const v = bundle.views[tok]; const o = v.o || {};
+    const links = {
+      ck: o.ck && codes.ckCode ? roleLink('ck', codes.ckCode) : '',
+      timer: o.timer ? `${location.origin}/timing/?ev=${encodeURIComponent(EVENT_ID)}` : '',
+    };
+    const report = o.report ? { team: o.report, group: bundle.msgrName || '', url: bundle.msgr || '' } : null;
+    const view = { name: v.name, role: v.role, group: v.group, items: v.items, links, report, ev: EVENT_ID, raceDate: bundle.raceDate, made: bundle.made, hq: bundle.hq };
+    ops.push(['set', tok, { j: JSON.stringify(view), name: v.name, made: bundle.made, pub: FB.serverTimestamp() }]);
+  }
+  for (const c of current) if (!toks.includes(c.tok)) ops.push(['del', c.tok]);
+  for (let i = 0; i < ops.length; i += 400) {
+    const b = FB.writeBatch(db);
+    for (const [k, tok, d] of ops.slice(i, i + 400)) { const ref = FB.doc(db, evPath('staffview/' + tok)); k === 'set' ? b.set(ref, d) : b.delete(ref); }
+    await b.commit();
+  }
+  return { set: toks.length, del: ops.filter(o => o[0] === 'del').length };
+}
+export async function stopStaffView(tok) { const { db } = firebase(); const b = FB.writeBatch(db); b.delete(FB.doc(db, evPath('staffview/' + tok))); await b.commit(); }
