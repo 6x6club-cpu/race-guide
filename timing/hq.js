@@ -3,7 +3,7 @@
 import * as C from './common.js';
 const { $, $$, esc, hms, hm, dur, ymdhms } = C;
 
-const S = { ev: null, evList: [], user: null, known: false, recs: [], meta: null, starts: {}, devices: [], code: null, err: '', imp: null, impMsg: '', tab: 'ck', editStart: null };
+const S = { notices: [], ev: null, evList: [], user: null, known: false, recs: [], meta: null, starts: {}, devices: [], code: null, err: '', imp: null, impMsg: '', tab: 'ck', editStart: null };
 let unsubs = [];
 const ptLabel = k => k === 'VOID' ? '取消' : ((S.ev && S.ev.points.find(p => p.k === k)) || { label: k }).label;
 const isAdmin = () => S.user && !S.user.isAnonymous;
@@ -14,7 +14,7 @@ function derived() {
   return { vo, live, cnt, key };
 }
 function render() {
-  const keep = ['stTime', 'stWhy', 'rsId'].map(id => [id, $('#' + id) && $('#' + id).value]);
+  const keep = ['stTime', 'stWhy', 'rsId', 'ntText'].map(id => [id, $('#' + id) && $('#' + id).value]);
   render0();
   keep.forEach(([id, v]) => { const el = $('#' + id); if (el && v != null) el.value = v; });
 }
@@ -28,7 +28,7 @@ function render0() {
   }
   const { vo, live, cnt, key } = derived();
   const fromCache = S.meta && S.meta.fromCache;
-  const tabs = [['ck', '受付'], ['course', 'コース上の人'], ['start', 'スタート時刻'], ['rec', '記録・ゴールタイム'], ['dev', '参加コード・端末'], ['csv', 'CSV']];
+  const tabs = [['notice', 'お知らせ'], ['ck', '受付'], ['course', 'コース上の人'], ['start', 'スタート時刻'], ['rec', '記録・ゴールタイム'], ['dev', '参加コード・端末'], ['csv', 'CSV']];
   m.innerHTML = `
   <div class="card"><div class="row" style="justify-content:space-between">
     <div class="row"><select id="evSel">${S.evList.map(e => `<option value="${esc(e.id)}" ${e.id === C.EVENT_ID ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
@@ -37,11 +37,25 @@ function render0() {
     ${S.err ? `<div class="err">${esc(S.err)}</div>` : ''}
     <div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div></div>
   <div id="body"></div>`;
-  $('#body').innerHTML = ({ ck: ckHTML, course: courseHTML, start: startHTML, rec: recHTML, dev: devHTML, csv: csvHTML }[S.tab])(live, vo, cnt, key);
+  $('#body').innerHTML = ({ notice: noticeHTML, ck: ckHTML, course: courseHTML, start: startHTML, rec: recHTML, dev: devHTML, csv: csvHTML }[S.tab])(live, vo, cnt, key);
   $('#out').onclick = () => C.logout();
   $('#evSel').onchange = e => useEvent(e.target.value);
   $$('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); });
   bind();
+}
+/* ---- 選手向けのお知らせ ---- */
+const GUIDE_URL = { 'kq50-2026': 'https://race.ishikawahiromi.jp/kusenbu50/', 'test-kq50': 'https://race.ishikawahiromi.jp/kusenbu50/?ev=test-kq50' };
+function noticeHTML() {
+  const url = GUIDE_URL[C.EVENT_ID] || '';
+  return `<div class="card"><h3>選手向けのお知らせを出す</h3>
+    <p class="sub" style="margin-top:0">ここで「公開」すると、選手向け大会案内${url ? `（<a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>）` : ''}の上部に、1分以内に表示されます。本部のアカウントならどなたでも出せます。${C.EVENT_ID === 'test-kq50' ? '<br><b>テスト大会のお知らせは、上のURL（?ev=test-kq50 付き）でだけ表示されます。</b>' : ''}</p>
+    <textarea id="ntText" rows="4" placeholder="例：濃霧のため、スタートを30分遅らせます。受付は予定どおり5:00からです。" style="width:100%;font:inherit;padding:8px;border:2px solid var(--line);border-radius:8px"></textarea>
+    <div class="row" style="margin-top:6px"><label><input type="checkbox" id="ntImp"> 重要なお知らせ（赤で目立たせる）</label><button class="btn" id="ntGo">公開する</button></div>
+    <div class="sub" id="ntMsg"></div></div>
+  <div class="card"><h3>出したお知らせ（${S.notices.length}件）</h3>
+    ${S.notices.map(n => `<div style="border-top:1px solid var(--line);padding:8px 0;${n.hidden ? 'opacity:.5' : ''}"><div class="sub">${ymdhms(n.at).slice(5, 16)}　${esc(n.by || '')}　${n.important ? '<span class="tag bad">重要</span>' : ''}${n.hidden ? '<span class="tag">非表示</span>' : '<span class="tag ok">表示中</span>'}</div>
+      <div style="white-space:pre-wrap;margin:4px 0">${esc(n.text)}</div>
+      <button class="btn sec" data-nhide="${esc(n.id)}" data-v="${n.hidden ? 0 : 1}">${n.hidden ? 'もう一度表示する' : '非表示にする'}</button></div>`).join('') || '<div class="sub">まだありません</div>'}</div>`;
 }
 /* ---- 受付 ---- */
 function ckHTML(live) {
@@ -165,6 +179,14 @@ function impHTML() {
     ${S.impMsg ? `<div class="sub" style="margin-top:6px">${esc(S.impMsg)}</div>` : ''}`;
 }
 function bind() {
+  const ng = $('#ntGo'); if (ng) ng.onclick = async () => {
+    const t = $('#ntText').value.trim(), imp = $('#ntImp').checked; if (!t) { $('#ntMsg').textContent = 'お知らせの文を入れてください'; return; }
+    if (!confirm(`次のお知らせを選手向けに公開します。よろしいですか？\n\n${imp ? '【重要】' : ''}${t}`)) return;
+    ng.disabled = true;
+    try { await C.addNotice(t, imp); $('#ntText').value = ''; S.ntMsg = '公開しました。大会案内に1分以内に表示されます。'; } catch (e) { S.ntMsg = '公開できませんでした：' + C.errText(e); }
+    ng.disabled = false; render(); const m = $('#ntMsg'); if (m) m.textContent = S.ntMsg;
+  };
+  $$('[data-nhide]').forEach(b => b.onclick = async () => { try { await C.updateNotice(b.dataset.nhide, { hidden: b.dataset.v === '1' }); } catch (e) { alert(C.errText(e)); } });
   $$('[data-edit]').forEach(b => b.onclick = () => { S.editStart = b.dataset.edit; render(); });
   const ss = $('#stSave'); if (ss) ss.onclick = async () => {
     const c = S.ev.cats.find(x => x.k === S.editStart); const [h, mi, se] = $('#stTime').value.split(':').map(Number); const base = new Date(c.start);
@@ -218,7 +240,7 @@ async function readCSV(f) {
 }
 async function useEvent(id) {
   C.setEventId(id); try { localStorage.setItem('hq-ev', id); } catch (e) {}
-  S.ev = await C.loadEvent(id); S.recs = []; S.starts = {}; S.devices = []; S.code = null; S.resetAt = null; S.resetMsg = ''; S.imp = null; S.impMsg = ''; S.err = '';
+  S.ev = await C.loadEvent(id); S.recs = []; S.starts = {}; S.devices = []; S.code = null; S.notices = []; S.resetAt = null; S.resetMsg = ''; S.imp = null; S.impMsg = ''; S.err = '';
   unsubs.forEach(f => f()); unsubs = [];
   if (isAdmin()) {
     const er = e => { S.err = '読めません：' + C.errText(e); render(); };
@@ -226,6 +248,7 @@ async function useEvent(id) {
     unsubs.push(C.watchStarts(st => { S.starts = st; render(); }, er));
     unsubs.push(C.watchDevices(ds => { S.devices = ds; render(); }, er));
     unsubs.push(C.watchReset(ep => { S.resetAt = ep; render(); }, () => {}));
+    unsubs.push(C.watchNotices(ns => { S.notices = ns; render(); }, er));
     C.getJoinCodes().then(c => { S.code = c; render(); }).catch(er);
   }
   render();

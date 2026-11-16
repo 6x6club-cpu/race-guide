@@ -268,6 +268,16 @@ export async function resetEvent() {
   }
   return { n, epoch };
 }
+/* ---------- 選手向けのお知らせ（大会案内に表示。読むのはログイン不要、書くのは本部だけ） ---------- */
+export function watchNotices(cb, err) {
+  const { db } = firebase();
+  return FB.onSnapshot(FB.collection(db, evPath('notices')), s => cb(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => Date.parse(b.at) - Date.parse(a.at))), err);
+}
+export async function addNotice(text, important) {
+  const { db, auth } = firebase(); const ref = FB.doc(FB.collection(db, evPath('notices')));
+  await FB.setDoc(ref, { text: String(text), important: !!important, hidden: false, at: new Date().toISOString(), by: auth.currentUser.email || '' });
+}
+export async function updateNotice(id, patch) { const { db } = firebase(); await FB.updateDoc(FB.doc(db, evPath('notices/' + id)), patch); }
 export async function getJoinCodes() { const { db } = firebase(); const s = await FB.getDoc(FB.doc(db, evPath('private/join'))); const d = s.exists() ? s.data() : {}; return { code: d.code || '', ckCode: d.ckCode || '', swCode: d.swCode || '' }; }
 /** k：'code'（計測担当の参加コード）／'ckCode'（受付用リンクのコード） */
 export async function setJoinCode(k, v) { const { db } = firebase(); await FB.setDoc(FB.doc(db, evPath('private/join')), { [k]: String(v) }, { merge: true }); }

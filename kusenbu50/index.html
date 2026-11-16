@@ -80,6 +80,7 @@ async function getJSON(name){
 async function load(){
   const [g,n,r,b]=await Promise.all(['guide','notices','results','bibs'].map(getJSON));
   D.guide=g;D.notices=n;D.results=r;D.bibs=b;render();
+  if(navigator.onLine&&await fetchFbNotices())render();
   refreshSaved();
 }
 /* 保存済みの端末は、通信できたときに控え（ページ・図・データ）を最新に入れ替える */
@@ -126,8 +127,21 @@ function gmapHTML(key){
   if(!online())return `<div class="gmap-off"><b>Googleマップは通信できるときに表示されます</b><br>いまは圏外のため表示できません。下の駐車場の案内図と徒歩の案内をご覧ください。</div>${btn}<div class="muted" style="margin:4px 0 10px">経路のボタンも通信できるときに使えます</div>`;
   return `<div class="gmap"><iframe src="${esc(g.embed)}" title="${esc(g.label||'会場の地図')}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe></div>${btn}<div class="muted" style="margin:4px 0 10px">地図：Google マップ（通信できるときに表示）</div>`;
 }
+/* ---- 本部のお知らせ（Firebase）：本部アカウントで書いたものを、ログインなしで読む。圏外では最後に受け取った分を表示 ---- */
+const FB_PROJECT='trails-race',FB_KEY='AIzaSyAfuBxAeCQOhvdOurFOxpRysamQpz8lUJk';
+const FB_EVENT=(()=>{const e=new URLSearchParams(location.search).get('ev');return ['kq50-2026','test-kq50'].includes(e)?e:'kq50-2026'})();
+D.fbn=LS.get('kq50-fbn:'+FB_EVENT,null);
+async function fetchFbNotices(){
+  try{
+    const r=await fetch(`https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents/events/${FB_EVENT}/notices?pageSize=100&key=${FB_KEY}`,{cache:'no-store'});
+    if(!r.ok)return false;const j=await r.json();const v=f=>f?(f.stringValue??f.booleanValue??f.timestampValue??f.integerValue??null):null;
+    const items=(j.documents||[]).map(d=>{const f=d.fields||{};return{id:'fb-'+d.name.split('/').pop(),text:v(f.text)||'',important:!!v(f.important),hidden:!!v(f.hidden),at:v(f.at)||d.createTime}});
+    const nx={at:new Date().toISOString(),items};const ch=JSON.stringify(items)!==JSON.stringify(D.fbn&&D.fbn.items);
+    D.fbn=nx;LS.set('kq50-fbn:'+FB_EVENT,nx);return ch;
+  }catch(e){return false}
+}
 function noticesHTML(){
-  const n=D.notices;if(!n||!n.items)return '';
+  const n={items:[...((D.notices&&D.notices.items)||[]),...((D.fbn&&D.fbn.items)||[])]};if(!n.items.length)return '';
   const items=n.items.filter(x=>!x.hidden).sort((a,b)=>(b.important-a.important)||Date.parse(b.at)-Date.parse(a.at));
   return items.map(x=>`<div class="notice ${x.important?'':'n'}"><div class="h">${x.important?'重要なお知らせ':'お知らせ'}　<span class="tm">${fmt(x.at)}</span></div><div>${esc(x.text).replace(/\n/g,'<br>')}</div></div>`).join('');
 }
@@ -321,7 +335,7 @@ window.addEventListener('hashchange',render);
 window.addEventListener('online',load);
 window.addEventListener('offline',()=>{D.src.guide=D.src.guide==='net'?'cache':D.src.guide;D.src.notices=D.src.notices==='net'?'cache':D.src.notices;render()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&navigator.onLine)load()});
-setInterval(()=>{if(navigator.onLine)getJSON('notices').then(n=>{if(n){const ch=JSON.stringify(n)!==JSON.stringify(D.notices);D.notices=n;if(ch)render();else statusLine()}})},60000);
+setInterval(()=>{if(navigator.onLine){getJSON('notices').then(n=>{if(n){const ch=JSON.stringify(n)!==JSON.stringify(D.notices);D.notices=n;if(ch)render();else statusLine()}});fetchFbNotices().then(ch=>{if(ch)render()})}},60000);
 if('serviceWorker' in navigator&&LS.get('kq50-saved',null))navigator.serviceWorker.register('sw.js').catch(()=>{});
 load();
 </script>
