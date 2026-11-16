@@ -330,7 +330,7 @@ export async function publishStaffBundle(bundle, current, codes) {
       timer: o.timer ? `${location.origin}/timing/?ev=${encodeURIComponent(EVENT_ID)}` : '',
     };
     const report = o.report ? { team: o.report, group: bundle.msgrName || '', url: bundle.msgr || '' } : null;
-    const view = { name: v.name, role: v.role, group: v.group, items: v.items, links, report, ev: EVENT_ID, raceDate: bundle.raceDate, made: bundle.made, hq: bundle.hq };
+    const view = { note: o.note || '', name: v.name, role: v.role, group: v.group, items: v.items, links, report, ev: EVENT_ID, raceDate: bundle.raceDate, made: bundle.made, hq: bundle.hq };
     ops.push(['set', tok, { j: JSON.stringify(view), name: v.name, made: bundle.made, pub: FB.serverTimestamp() }]);
   }
   for (const c of current) if (!toks.includes(c.tok)) ops.push(['del', c.tok]);
