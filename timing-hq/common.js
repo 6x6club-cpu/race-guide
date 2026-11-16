@@ -19,8 +19,12 @@ export const DEFAULT_EVENT = 'test-kq50';
 export const LINK_ROLES = {
   ck: { codeKey: 'ckCode', param: 'ck', pts: ['CK', 'PO', 'PI'], label: '受付専用', short: '受付', name: '受付用リンク', prefix: '受付-' },
   sweep: { codeKey: 'swCode', param: 'sw', pts: ['DN'], label: 'スイーパー', short: 'スイーパー', name: 'スイーパー用リンク', prefix: 'スイーパー-' },
+  // CP担当：リンクで決まった1つのCPと、リタイアだけ（pts は端末ごとに決まる）
+  cp: { codeKey: 'cpCode', param: 'cp', pts: null, label: 'CP担当', short: 'CP', name: 'CP担当用リンク', prefix: 'CP-' },
 };
-export const roleLabel = r => LINK_ROLES[r] ? LINK_ROLES[r].label : '計測担当';
+export const roleLabel = (r, pt) => r === 'cp' ? `CP担当（${pt || '?'}）` : LINK_ROLES[r] ? LINK_ROLES[r].label : '計測担当';
+/** 役割で記録できる地点（CP担当は担当のCPとリタイア） */
+export const rolePts = (role, pt) => role === 'cp' ? [pt, 'DN'].filter(Boolean) : (LINK_ROLES[role] ? LINK_ROLES[role].pts : null);
 export let EVENT_ID = DEFAULT_EVENT;
 export function setEventId(id) { EVENT_ID = id; }
 
@@ -48,10 +52,12 @@ export function bibOf(raw) {
   const p = s.match(/^P-?(\d{1,4}(?:[-.]\d{1,2})?)$/) || s.match(/(?:^|[^A-Z])P-(\d{1,4}(?:-\d{1,2})?)(?!\d)/); if (p) return 'P-' + p[1].replace('.', '-').replace(/^0+(?=\d)/, '');
   const m = s.match(/\d{1,5}/); return m ? String(+m[0]) : null;
 }
+/** コース上で最後に通過した地点（コースの順番で最も先のもの） */
+export function lastPassed(ev, x) { const c = (ev && ev.course) || []; for (let i = c.length - 1; i >= 0; i--) if (x && x.pass && x.pass[c[i]]) return { k: c[i], r: x.pass[c[i]], i }; return null; }
 export const knownBib = (ev, bib) => !ev ? true : isPacer(bib) ? (ev.pacers || []).includes(bib) : ev.bibs.includes(+bib);
 /** 人ごとの状態（取り消されていない記録から）：受付・コース上・フィニッシュ・リタイア */
 export function peopleState(live) {
-  const st = {}; const g = b => st[b] || (st[b] = { bib: b, ck: null, out: false, lastOut: null, lastIn: null, outs: 0, gf: null, dn: null, g1: null });
+  const st = {}; const g = b => st[b] || (st[b] = { bib: b, ck: null, out: false, lastOut: null, lastIn: null, outs: 0, gf: null, dn: null, g1: null, pass: {} });
   [...live].sort((a, b) => Date.parse(a.t) - Date.parse(b.t)).forEach(r => {
     const x = g(r.bib);
     if (r.pt === 'CK') { if (!x.ck) x.ck = r; }
@@ -60,6 +66,7 @@ export function peopleState(live) {
     else if (r.pt === 'GF') { if (!x.gf) x.gf = r; }
     else if (r.pt === 'DN') { if (!x.dn) x.dn = r; }
     else if (r.pt === 'G1') { if (!x.g1) x.g1 = r; }
+    if (!['CK', 'PO', 'PI', 'DN', 'VOID'].includes(r.pt) && !x.pass[r.pt]) x.pass[r.pt] = r;  // 通過地点ごとの最初の記録
   });
   return st;
 }
@@ -182,15 +189,15 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, ng) => setT
 
 /** スタッフの端末を参加コードで登録する（Googleアカウント不要）。登録済みなら何もしない
     role：'timer'（計測担当：参加コード）／'ck'（受付：受付用リンクのコード） */
-export async function joinWithCode(code, label, role = 'timer') {
+export async function joinWithCode(code, label, role = 'timer', pt = '') {
   const { auth, db } = firebase();
   if (!auth.currentUser) await withTimeout(FB.signInAnonymously(auth), 15000, '通信できないため登録できません');
   const uid = auth.currentUser.uid, ref = FB.doc(db, evPath('devices/' + uid));
   const cur = await withTimeout(FB.getDocFromServer(ref), 15000, '通信できないため登録できません').catch(e => { if (e.code === 'permission-denied') return null; throw e; });
-  if (cur && cur.exists()) { if (cur.get('active') === false) throw new Error('この端末は本部で停止されています'); return { uid, already: true, role: cur.get('role') || 'timer', label: cur.get('label') }; }
-  try { await withTimeout(FB.setDoc(ref, { code: String(code).trim(), role, label: label || '', dev: await deviceId(), active: true, at: FB.serverTimestamp() }), 15000, '通信できないため登録できません'); }
+  if (cur && cur.exists()) { if (cur.get('active') === false) throw new Error('この端末は本部で停止されています'); return { uid, already: true, role: cur.get('role') || 'timer', label: cur.get('label'), pt: cur.get('pt') || '' }; }
+  try { await withTimeout(FB.setDoc(ref, { code: String(code).trim(), role, ...(role === 'cp' ? { pt } : {}), label: label || '', dev: await deviceId(), active: true, at: FB.serverTimestamp() }), 15000, '通信できないため登録できません'); }
   catch (e) { if (e.code === 'permission-denied') throw new Error(LINK_ROLES[role] ? `${LINK_ROLES[role].name}が古いか違います（本部に新しいリンクをもらってください）` : '参加コードが違います'); throw e; }
-  return { uid, already: false, role, label };
+  return { uid, already: false, role, label, pt };
 }
 /** この端末が登録済みか（通信できるときだけ確かめる） */
 export async function myDevice() {
@@ -278,12 +285,12 @@ export async function addNotice(text, important) {
   await FB.setDoc(ref, { text: String(text), important: !!important, hidden: false, at: new Date().toISOString(), by: auth.currentUser.email || '' });
 }
 export async function updateNotice(id, patch) { const { db } = firebase(); await FB.updateDoc(FB.doc(db, evPath('notices/' + id)), patch); }
-export async function getJoinCodes() { const { db } = firebase(); const s = await FB.getDoc(FB.doc(db, evPath('private/join'))); const d = s.exists() ? s.data() : {}; return { code: d.code || '', ckCode: d.ckCode || '', swCode: d.swCode || '' }; }
+export async function getJoinCodes() { const { db } = firebase(); const s = await FB.getDoc(FB.doc(db, evPath('private/join'))); const d = s.exists() ? s.data() : {}; return { code: d.code || '', ckCode: d.ckCode || '', swCode: d.swCode || '', cpCode: d.cpCode || '' }; }
 /** k：'code'（計測担当の参加コード）／'ckCode'（受付用リンクのコード） */
 export async function setJoinCode(k, v) { const { db } = firebase(); await FB.setDoc(FB.doc(db, evPath('private/join')), { [k]: String(v) }, { merge: true }); }
 // LINEで送ったときにLINEの中ではなくSafari／Chromeで開くよう openExternalBrowser=1 を付ける（LINEの公式の仕組み）
 // 計測端末のURL（本部画面は /timing-hq/、計測端末は /timing/）
-export const roleLink = (role, code) => new URL(`/timing/?ev=${encodeURIComponent(EVENT_ID)}&${LINK_ROLES[role].param}=${encodeURIComponent(code)}&openExternalBrowser=1`, location.origin).href;
+export const roleLink = (role, code, pt) => new URL(`/timing/?ev=${encodeURIComponent(EVENT_ID)}&${LINK_ROLES[role].param}=${encodeURIComponent(code)}${pt ? '&pt=' + encodeURIComponent(pt) : ''}&openExternalBrowser=1`, location.origin).href;
 /** アプリ内ブラウザ（LINEなど）：圏外で開き直す仕組み（Service Worker）が使えない */
 const UA = navigator.userAgent || '';
 export const INAPP = /\bLine\//i.test(UA) ? 'LINE' : /Instagram/i.test(UA) ? 'Instagram' : /FBAN|FBAV|FB_IAB/i.test(UA) ? 'Facebook' : /Twitter/i.test(UA) ? 'X（Twitter）' : (!('serviceWorker' in navigator) ? 'このアプリ' : '');

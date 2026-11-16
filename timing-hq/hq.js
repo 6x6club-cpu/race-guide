@@ -99,9 +99,50 @@ function courseHTML(live) {
     <div class="sub" style="margin-top:8px"><b>受付済みで、終了の記録がないペーサー</b>（伴走を終えたら「ペーサー戻り」を記録。大会の最後に確認）</div>
     <div class="chips">${pNoEnd.map(p => chip(p.b, late ? 'bad' : '', `受付 ${hm(p.x.ck.t)}`)).join('') || '<span class="sub">なし</span>'}</div>
     <p class="sub">終了：${pDone.map(p => `${esc(p.b)}（${hm(p.x.lastIn.t)}）`).join('、') || 'なし'}　／　未受付：${pNo.map(p => esc(p.b)).join('、') || 'なし'}</p></div>
-  <div class="card"><h3>コース上の選手（${onCourse.length}人）</h3><div class="chips">${onCourse.map(r => chip(r.b, late ? 'bad' : 'w', r.x.g1 ? '1周目済' : '')).join('') || '<span class="sub">いません</span>'}</div>
+  ${overdueHTML(onCourse)}
+  <div class="card"><h3>コース上の選手（${onCourse.length}人）</h3>${sectionsHTML(onCourse, late, chip)}
     ${waiting.length ? `<p class="sub">受付済み・スタート前：${waiting.map(r => esc(r.b)).join('、')}</p>` : ''}
     <p class="sub">リタイア：${dn.map(r => `${esc(r.b)}（${hm(r.x.dn.t)}）`).join('、') || 'なし'}</p></div>`;
+}
+/* 区間ごと（最後に通過した地点）に並べる */
+function sectionsHTML(onCourse, late, chip) {
+  if (!onCourse.length) return '<div class="chips"><span class="sub">いません</span></div>';
+  const course = (S.ev.course || []).filter(k => k !== 'GF'); const lab = k => (S.ev.points.find(p => p.k === k) || { label: k }).label;
+  const groups = [{ key: '', title: 'スタート〜' + (course[0] ? lab(course[0]) : 'フィニッシュ'), list: [] }, ...course.map((k, i) => ({ key: k, title: lab(k) + '〜' + (course[i + 1] ? lab(course[i + 1]) : 'フィニッシュ'), list: [] }))];
+  onCourse.forEach(r => { const lp = C.lastPassed(S.ev, r.x); const g = groups.find(x => x.key === (lp && lp.k !== 'GF' ? lp.k : '')) || groups[0]; g.list.push({ r, lp }); });
+  return groups.filter(g => g.list.length).map(g => `<div class="sub" style="margin-top:6px"><b>${esc(g.title)}</b>（${g.list.length}人）</div><div class="chips">${g.list.map(({ r, lp }) => chip(r.b, late ? 'bad' : 'w', lp ? `${lp.k} ${hm(lp.r.t)}` : '')).join('')}</div>`).join('');
+}
+/* CPの関門時刻を過ぎても、その地点を通過していない選手 */
+function overdueHTML(onCourse) {
+  const now = Date.now(); const cps = S.ev.points.filter(p => p.cutoff && (S.ev.course || []).includes(p.k) && now > Date.parse(p.cutoff));
+  if (!cps.length) return '';
+  const rows = cps.map(p => ({ p, list: onCourse.filter(r => !(r.x.pass && r.x.pass[p.k])) })).filter(x => x.list.length);
+  if (!rows.length) return '';
+  return `<div class="card" style="border:2px solid var(--bad)"><h3 style="color:var(--bad)">関門超過の可能性</h3>${rows.map(({ p, list }) => `<div class="sub" style="margin-top:6px"><b>${esc(p.label)}</b>（関門 ${hm(p.cutoff)}）を通過していない：${list.length}人</div><div class="chips">${list.map(r => `<span class="chip bad">${esc(r.b)}</span>`).join('')}</div>`).join('')}
+    <p class="sub">記録の抜け（読み漏れ）の可能性もあります。CPのスタッフ・スイーパーに確認してください。</p></div>`;
+}
+/* 通過一覧・区間タイム（コースの順番で、時刻とスタートからの経過） */
+function splitRows(live) {
+  const st = C.peopleState(live); const course = S.ev.course || [];
+  return Object.values(st).filter(x => !C.isPacer(x.bib) && course.some(k => x.pass[k])).map(x => {
+    const c = C.catOf(S.ev, x.bib); const s0 = c && C.startOf(S.ev, S.starts, c.k);
+    return { bib: x.bib, cat: c ? c.label : '', start: s0, cells: course.map(k => { const r = x.pass[k]; return r ? { t: r.t, el: s0 ? Date.parse(r.t) - Date.parse(s0) : null } : null; }), dn: x.dn };
+  }).sort((a, b) => (+a.bib || 0) - (+b.bib || 0));
+}
+function splitHTML(live) {
+  const course = S.ev.course || []; if (!course.length) return '';
+  const rows = splitRows(live); const lab = k => (S.ev.points.find(p => p.k === k) || { label: k }).label;
+  return `<div class="card"><h3>通過一覧・区間タイム（${rows.length}人）</h3>
+    <p class="sub" style="margin-top:0">上の段：通過時刻、下の段：スタートからの経過時間。区間タイムはCSVにも入ります。</p>
+    <div style="max-height:50vh;overflow:auto"><table><tr><th>No.</th><th>部門</th>${course.map(k => `<th>${esc(lab(k))}</th>`).join('')}<th></th></tr>
+    ${rows.map(r => `<tr><td><b>${esc(r.bib)}</b></td><td>${esc(r.cat)}</td>${r.cells.map(c => `<td>${c ? `${hms(c.t)}<br><span class="sub">${dur(c.el)}</span>` : '—'}</td>`).join('')}<td>${r.dn ? '<span class="tag bad">リタイア</span>' : ''}</td></tr>`).join('') || `<tr><td colspan="${course.length + 3}" class="sub">まだありません</td></tr>`}</table></div>
+    <div class="row" style="margin-top:8px"><button class="btn sec" id="expSplit" ${rows.length ? '' : 'disabled'}>通過一覧・区間タイムをCSVで書き出す</button></div></div>`;
+}
+function splitCSV(live) {
+  const course = S.ev.course || [], lab = k => (S.ev.points.find(p => p.k === k) || { label: k }).label, q = v => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+  const head = ['ゼッケン', '部門', 'スタート', ...course.flatMap((k, i) => [lab(k) + ' 通過時刻', lab(k) + ' 経過', ...(i ? [lab(course[i - 1]) + '→' + lab(k) + ' 区間'] : [])]), 'リタイア'];
+  const body = splitRows(live).map(r => [r.bib, r.cat, r.start ? hms(r.start) : '', ...r.cells.flatMap((c, i) => { const prev = i ? r.cells[i - 1] : null; return [c ? hms(c.t) : '', c ? dur(c.el) : '', ...(i ? [c && prev ? dur(Date.parse(c.t) - Date.parse(prev.t)) : ''] : [])]; }), r.dn ? hms(r.dn.t) : ''].map(q).join(','));
+  return '\ufeff' + [head.map(q).join(','), ...body].join('\r\n') + '\r\n';
 }
 /* ---- スタート時刻 ---- */
 function startHTML() {
@@ -122,6 +163,7 @@ function recHTML(live, vo, cnt, key) {
   return `<div class="card"><div class="kpi"><div><b>${S.recs.length}</b>受領した記録</div>${pts}<div><b style="color:${dups ? 'var(--bad)' : 'var(--ok)'}">${dups}</b>同じ選手・同じ地点が2件以上</div><div><b>${vo.size}</b>取消</div></div>
     <p class="sub">端末：${Object.entries(devs).map(([d, n]) => `${esc(d)} ${n}件${clk[d] != null ? `（時計のずれ ${(clk[d] / 1000).toFixed(1)}秒）` : ''}`).join('、') || '—'}</p>
     <p class="sub">「同じ選手・同じ地点が2件以上」は、別々に読んだ記録が2件あるものです。同じ記録の送り直しは記録IDが同じなので1件にしかなりません。</p></div>
+  ${splitHTML(live)}
   <div class="card"><div style="max-height:70vh;overflow:auto"><table>
     <tr><th>読んだ時刻</th><th>No.</th><th>部門</th><th>地点</th><th>ゴールタイム</th><th>本部受領</th><th>端末</th><th>注意</th></tr>
     ${[...S.recs].reverse().map(r => { const d = r.pt !== 'VOID' && !vo.has(r.id) && cnt[key(r)] > 1; const lag = r.receivedAt ? (Date.parse(r.receivedAt) - Date.parse(r.t)) / 1000 : 0; const c = C.catOf(S.ev, r.bib); const g = vo.has(r.id) ? null : goal(r);
@@ -144,15 +186,23 @@ function linkCard(role) {
       <p class="sub">作り直すと古いリンクでは新しく登録できなくなります（登録済みの端末はそのまま使えます）。</p></div></div>`
       : `<button class="btn" data-new="${role}">${L.name}を作る</button>`}</div>`;
 }
+/* CP担当用リンク：大会のCPごとに1つ（コードは共通。リンクで担当のCPが決まる） */
+function cpCard() {
+  const cps = S.ev.points.filter(p => p.cp); if (!cps.length) return '';
+  const ld = S.code == null, code = S.code && S.code.cpCode;
+  return `<div class="card"><h3>CP担当用リンク（CPごと）</h3><p class="sub" style="margin-top:0">各CPのスタッフに、そのCPのリンクを送ってください。開くだけで、その端末は<b>担当のCPの通過とリタイアだけ</b>を記録できるようになります。山の中で圏外でも端末に保存され、電波が入ると本部に届きます。</p>
+    ${ld ? '読み込み中…' : !code ? '<button class="btn" data-new="cp">CP担当用リンクを作る</button>' : cps.map(p => { const link = C.roleLink('cp', code, p.k); return `<div class="row" style="align-items:flex-start;border-top:1px solid var(--line);padding-top:8px;margin-top:8px"><div class="qrbox" style="width:130px">${qrSVG(link)}</div><div style="flex:1;min-width:240px"><b>${esc(p.label)}</b>${p.cutoff ? `　<span class="sub">関門 ${hm(p.cutoff)}</span>` : ''}<div class="link">${esc(link)}</div>
+      <div class="row" style="margin-top:6px"><button class="btn" data-copycp="${esc(p.k)}">リンクをコピー</button><button class="btn sec" data-printcp="${esc(p.k)}">QRを印刷</button></div></div></div>`; }).join('') + '<p class="sub">「リンクを作り直す」で、すべてのCPのリンクがまとめて新しくなります（登録済みの端末はそのまま）。</p><button class="btn sec" data-new="cp">リンクを作り直す</button>'}</div>`;
+}
 function devHTML() {
   const ld = S.code == null;
-  return linkCard('ck') + linkCard('sweep') + `
+  return linkCard('ck') + linkCard('sweep') + cpCard() + `
   <div class="card"><h3>計測担当の参加コード</h3><p class="sub" style="margin-top:0">「1周目終了」「フィニッシュ」を記録する計測担当は、このコードを入れて端末を登録します（Googleアカウント不要）。受付スタッフには教えないでください。</p>
     <div class="row">いまのコード：<b style="font-size:24px;letter-spacing:.1em">${ld ? '…' : esc(S.code.code) || '（未設定）'}</b>
     <button class="btn sec" id="newCode">${S.code && S.code.code ? 'コードを変える' : 'コードを作る'}</button></div></div>
   <div class="card"><h3>登録された端末（${S.devices.length}台）</h3><table><tr><th>端末の名前</th><th>役割</th><th>端末</th><th>登録</th><th>記録</th><th>状態</th><th></th></tr>
     ${S.devices.map(d => { const n = S.recs.filter(r => r.by === d.uid).length;
-      return `<tr><td><b>${esc(d.label)}</b></td><td>${C.roleLabel(d.role)}</td><td>${esc(d.dev || '')}</td><td>${d.at ? ymdhms(d.at).slice(5, 16) : ''}</td><td>${n}件</td><td>${d.active === false ? '<span class="tag bad">停止中</span>' : '<span class="tag ok">使用中</span>'}</td>
+      return `<tr><td><b>${esc(d.label)}</b></td><td>${C.roleLabel(d.role, d.pt)}</td><td>${esc(d.dev || '')}</td><td>${d.at ? ymdhms(d.at).slice(5, 16) : ''}</td><td>${n}件</td><td>${d.active === false ? '<span class="tag bad">停止中</span>' : '<span class="tag ok">使用中</span>'}</td>
       <td><button class="btn sec" data-dev="${esc(d.uid)}" data-act="${d.active === false ? 1 : 0}">${d.active === false ? '再開' : '停止'}</button></td></tr>`; }).join('') || '<tr><td colspan="7" class="sub">まだ登録された端末はありません</td></tr>'}</table>
     <p class="sub">紛失した端末や、心当たりのない端末は「停止」すると、その端末からは本部に送れなくなります（端末に残った記録はCSVで回収できます）。</p></div>
   <div class="card" style="border:2px solid var(--bad)"><h3>本番前リセット（テストの記録を片付ける）</h3>
@@ -209,6 +259,12 @@ function bind() {
     try { await C.setJoinCode(L.codeKey, v); S.code[L.codeKey] = v; } catch (e) { alert(C.errText(e)); } render();
   });
   $$('[data-copy]').forEach(b => b.onclick = async () => { const l = C.roleLink(b.dataset.copy, S.code[C.LINK_ROLES[b.dataset.copy].codeKey]); try { await navigator.clipboard.writeText(l); b.textContent = 'コピーしました'; } catch (e) { prompt('このリンクをコピーしてください', l); } });
+  $$('[data-copycp]').forEach(b => b.onclick = async () => { const l = C.roleLink('cp', S.code.cpCode, b.dataset.copycp); try { await navigator.clipboard.writeText(l); b.textContent = 'コピーしました'; } catch (e) { prompt('このリンクをコピーしてください', l); } });
+  $$('[data-printcp]').forEach(b => b.onclick = () => {
+    const p = S.ev.points.find(x => x.k === b.dataset.printcp), link = C.roleLink('cp', S.code.cpCode, p.k); const w = window.open('', '_blank');
+    w.document.write(`<!DOCTYPE html><meta charset="utf-8"><title>${esc(p.label)} 用QR</title><body style="font-family:sans-serif;text-align:center;padding:40px"><h1 style="font-size:40px;margin:0">${esc(p.label)}　担当用</h1><p style="font-size:22px">${esc(S.ev.name)}</p><div style="width:420px;margin:20px auto">${qrSVG(link)}</div><p style="font-size:20px">スマホのカメラで読み取り、開いたページで通過を記録してください</p><p style="font-size:12px;color:#666;word-break:break-all">${esc(link)}</p><script>setTimeout(()=>print(),300)<\/script></body>`);
+    w.document.close();
+  });
   $$('[data-print]').forEach(b => b.onclick = () => {
     const role = b.dataset.print, L = C.LINK_ROLES[role], link = C.roleLink(role, S.code[L.codeKey]); const w = window.open('', '_blank');
     w.document.write(`<!DOCTYPE html><meta charset="utf-8"><title>${L.short}用QR</title><body style="font-family:sans-serif;text-align:center;padding:40px"><h1 style="font-size:40px;margin:0">${L.short}スタッフ用</h1><p style="font-size:22px">${esc(S.ev.name)}</p><div style="width:420px;margin:20px auto">${qrSVG(link)}</div><p style="font-size:20px">スマホのカメラで読み取り、開いたページで記録してください</p><p style="font-size:12px;color:#666;word-break:break-all">${esc(link)}</p><script>setTimeout(()=>print(),300)<\/script></body>`);
@@ -224,6 +280,7 @@ function bind() {
   };
   $$('[data-dev]').forEach(b => b.onclick = async () => { const act = b.dataset.act === '1'; if (!act && !confirm('この端末を停止しますか？')) return; try { await C.setDeviceActive(b.dataset.dev, act); } catch (e) { alert(C.errText(e)); } });
   const f = $('#csv'); if (f) f.onchange = e => readCSV(e.target.files[0]);
+  const es = $('#expSplit'); if (es) es.onclick = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); C.saveFile(`通過一覧_${C.EVENT_ID}_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.csv`, splitCSV(derived().live)); };
   const ex = $('#exp'); if (ex) ex.onclick = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); C.saveFile(`本部受領_${C.EVENT_ID}_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.csv`, C.toCSV(S.recs.map(r => ({ ...r, status: 'received' })), ptLabel)); };
   const ig = $('#impGo'); if (ig) ig.onclick = async () => {
     ig.disabled = true; const have = new Set(S.recs.map(r => r.id)); const miss = S.imp.filter(r => !have.has(r.id)); let n = 0, a = 0;

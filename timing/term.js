@@ -12,7 +12,8 @@ const canSend = () => !!(S.user && (isAdmin() || (S.device && S.device.active !=
 /** リンクで登録した端末（受付専用・スイーパー）の役割。登録前でもリンクで開いていればその役割 */
 const linkRole = () => isAdmin() ? (S.viewAs || null) : (S.device ? (C.LINK_ROLES[S.device.role] ? S.device.role : null) : (S.linkPending && S.linkPending.role) || null);
 const isCkOnly = () => !!linkRole();
-const points = () => (S.ev ? S.ev.points : []).filter(p => !linkRole() || C.LINK_ROLES[linkRole()].pts.includes(p.k));
+const rolePt = () => isAdmin() ? S.viewAsPt : (S.device ? S.device.pt : (S.linkPending && S.linkPending.pt));
+const points = () => { const r = linkRole(), al = r && C.rolePts(r, rolePt()); return (S.ev ? S.ev.points : []).filter(p => !r || (al || []).includes(p.k)); };
 
 /* ---------- 音と画面の合図（圏外でも鳴る） ---------- */
 let ac = null;
@@ -49,7 +50,11 @@ async function record(raw, how) {
     const prev = live.filter(r => r.bib === bib && r.pt === S.pt);
     if (prev.length) warn.push(`${S.pt === 'CK' ? '受付済み' : 'この地点で記録済み'}（${prev.map(who).join('、')}）`);
     // スイーパーは山の中で受付の記録を受け取れないことが多いので、この警告は出さない
-    if ((S.pt === 'G1' || S.pt === 'GF' || (S.pt === 'DN' && linkRole() !== 'sweep')) && !pac && !st.ck) warn.push('受付の記録がありません');
+    const passing = S.pt === 'GF' || S.pt === 'G1' || ((S.ev && S.ev.course) || []).includes(S.pt);
+    if ((passing || S.pt === 'DN') && !pac && !st.ck && !['sweep', 'cp'].includes(linkRole())) warn.push('受付の記録がありません');
+    // CPの関門時刻を過ぎて通過した
+    const pdef = S.ev && S.ev.points.find(p => p.k === S.pt);
+    if (passing && !pac && pdef && pdef.cutoff && Date.now() > Date.parse(pdef.cutoff)) warn.push(`関門時刻（${hms(pdef.cutoff).slice(0, 5)}）を過ぎています。本部に連絡してください`);
   }
   await save({ bib, pt: S.pt, t: new Date().toISOString(), how, raw: String(raw).slice(0, 200), warn, label: S.label });
 }
@@ -165,7 +170,7 @@ async function useEvent(id) {
   const last = S.recs.filter(r => r.pt !== 'VOID').pop(); S.last = last && last.id;
   if (S.ev && !S.ev.points.find(p => p.k === S.pt)) S.pt = S.ev.points[0].k;
   S.device = await C.metaGet('device:' + id, null); S.linkPending = await C.metaGet('linkjoin:' + id, null);
-  if (S.user && S.user.isAnonymous && navigator.onLine) { const d = await C.myDevice(); if (d !== undefined) { S.device = d && { label: d.label, active: d.active, role: d.role || 'timer' }; await C.metaSet('device:' + id, S.device); } }
+  if (S.user && S.user.isAnonymous && navigator.onLine) { const d = await C.myDevice(); if (d !== undefined) { S.device = d && { label: d.label, active: d.active, role: d.role || 'timer', pt: d.pt || '' }; await C.metaSet('device:' + id, S.device); } }
   if (linkRole() && !points().find(p => p.k === S.pt)) S.pt = points()[0].k;
   watchRemote(); render();
   await autoJoin(); sync();
@@ -175,10 +180,10 @@ async function autoJoin() {
   if (!S.linkPending || S.device || isAdmin() || !navigator.onLine || S.joining) return;
   S.joining = true; const L = C.LINK_ROLES[S.linkPending.role];
   try {
-    const label = (S.label && S.label.startsWith(L.prefix)) ? S.label : (L.prefix + S.dev);
-    const r = await C.joinWithCode(S.linkPending.code, label, S.linkPending.role);
+    const label = (S.label && S.label.startsWith(L.prefix)) ? S.label : (L.prefix + (S.linkPending.pt ? S.linkPending.pt + '-' : '') + S.dev);
+    const r = await C.joinWithCode(S.linkPending.code, label, S.linkPending.role, S.linkPending.pt || '');
     S.label = r.label || label; await C.metaSet('label', S.label);
-    S.device = { label: S.label, active: true, role: r.role || S.linkPending.role }; await C.metaSet('device:' + C.EVENT_ID, S.device);
+    S.device = { label: S.label, active: true, role: r.role || S.linkPending.role, pt: r.pt || S.linkPending.pt || '' }; await C.metaSet('device:' + C.EVENT_ID, S.device);
     await C.metaSet('linkjoin:' + C.EVENT_ID, null); S.linkPending = null; S.msg = '';
     watchRemote();
   } catch (e) { S.msg = `${L.label}の端末として登録できませんでした：` + esc(C.errText(e)); }
@@ -202,7 +207,7 @@ function goalOf(r) {
 function whoText() {
   if (!S.userKnown) return ['mid', '確認中'];
   if (isAdmin()) return ['on', '本部：' + (S.user.email || '')];
-  if (S.device && S.device.active !== false) return ['on', C.roleLabel(S.device.role) + '：' + (S.label || S.device.label || '')];
+  if (S.device && S.device.active !== false) return ['on', C.roleLabel(S.device.role, S.device.pt) + '：' + (S.label || S.device.label || '')];
   if (S.linkPending) return ['mid', C.LINK_ROLES[S.linkPending.role].label + '（登録待ち・記録は端末に保存）'];
   if (S.device && S.device.active === false) return ['off', '本部で停止中'];
   return ['mid', '未登録（記録は端末に保存）'];
@@ -223,7 +228,7 @@ function render() {
       <button class="btn ${S.swReady ? 'sec' : ''} wide" id="doSW" style="margin-top:6px">${S.swReady ? 'もう一度保存する' : '圏外で使えるように保存'}</button></div>
     <div style="margin-top:14px"><b>2. 大会と参加コード</b>
       <div class="row"><select id="evSel">${S.evList.map(e => `<option value="${esc(e.id)}" ${e.id === C.EVENT_ID ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></div>
-      ${reg ? `<div class="sub" style="margin-top:6px">${isAdmin() ? `本部のアカウント（${esc(S.user.email)}）で送ります。` : `この端末は「${esc(S.label || S.device.label || '')}」（${C.roleLabel(S.device.role)}）として登録済みです。圏外で開き直しても登録は保たれます。`}</div>`
+      ${reg ? `<div class="sub" style="margin-top:6px">${isAdmin() ? `本部のアカウント（${esc(S.user.email)}）で送ります。` : `この端末は「${esc(S.label || S.device.label || '')}」（${C.roleLabel(S.device.role, S.device.pt)}）として登録済みです。圏外で開き直しても登録は保たれます。`}</div>`
       : S.linkPending ? `<div class="sub" style="margin-top:6px">${C.LINK_ROLES[S.linkPending.role].name}で開きました。通信できると自動で${C.LINK_ROLES[S.linkPending.role].label}の端末として登録されます。登録前の記録も、この端末に保存され、登録後に送られます。</div>`
       : `<div class="sub" style="margin-top:6px">計測担当の方は、本部から聞いた参加コードを入れて登録します（Googleアカウントは不要）。受付の方は、本部の「受付用リンク」かQRを開くだけで使えます。記録は、登録していなくても端末に保存されます。</div>
         <div class="row"><input id="jlabel" placeholder="端末の名前（例：受付A）" value="${esc(S.label)}" class="sm"></div>
@@ -236,8 +241,9 @@ function render() {
   </details>
   ${isAdmin() ? `<div class="card" style="${S.viewAs ? 'border:2px dashed var(--acc)' : ''}"><b>担当の画面を確認する（本部のみ）</b>
     <div class="sub">本部のアカウントのまま、各担当の画面に切り替えて見られます${S.viewAs ? '。<b>いまは確認用の表示です</b>' : ''}（記録は本部として送られます）。</div>
-    <div class="row"><select id="viewAs"><option value="">本部（すべての地点）＝計測担当と同じ</option>${Object.entries(C.LINK_ROLES).map(([k, L]) => `<option value="${k}" ${S.viewAs === k ? 'selected' : ''}>${esc(L.label)}の画面</option>`).join('')}</select></div></div>` : ''}
+    <div class="row"><select id="viewAs"><option value="">本部（すべての地点）＝計測担当と同じ</option>${Object.entries(C.LINK_ROLES).filter(([k]) => k !== 'cp').map(([k, L]) => `<option value="${k}" ${S.viewAs === k ? 'selected' : ''}>${esc(L.label)}の画面</option>`).join('')}${(S.ev ? S.ev.points : []).filter(p => p.cp).map(p => `<option value="cp:${p.k}" ${S.viewAs === 'cp' && S.viewAsPt === p.k ? 'selected' : ''}>CP担当（${esc(p.label)}）の画面</option>`).join('')}</select></div></div>` : ''}
   <div class="card">${linkRole() === 'ck' ? '<h3>受付（受付専用の端末）</h3><div class="sub">選手・ペーサーのスマホの番号画面のQR、または番号（ペーサーは P-23 のように）を入れてください。</div>'
+    : linkRole() === 'cp' ? `<h3>${esc(ptLabel(rolePt()))}（CP担当）</h3><div class="sub">通過した選手のQRを読むか番号を入れてください。リタイアした選手は「リタイア」で記録します。</div>`
     : linkRole() === 'sweep' ? '<h3>リタイア（スイーパー）</h3><div class="sub">リタイアした選手の番号を入れて「記録」を押してください。圏外でも端末に保存され、電波が入ると本部に届きます。</div>' : '<h3>いま記録する地点</h3>'}<div class="pts" style="margin-top:8px">${points().map(p => `<button class="pt ${S.pt === p.k ? 'sel' : ''}" data-pt="${p.k}">${esc(p.label)}<small>${esc(p.sub || '')}</small></button>`).join('')}</div>
     <div class="cam ${S.cam ? 'show' : ''}"><video id="cv" playsinline muted></video><div class="lbl">${esc(ptLabel(S.pt))}</div></div>
     <div class="row"><button class="btn ${S.cam ? 'sec' : ''}" id="doCam">${S.cam ? 'カメラを止める' : 'QRを読む'}</button>
@@ -264,7 +270,7 @@ function render() {
   $('#evSel').onchange = e => useEvent(e.target.value);
   const dj = $('#doJoin'); if (dj) dj.onclick = join;
   const di = $('#doIn'); if (di) di.onclick = async () => { try { await C.login(); } catch (e) { $('#inMsg').textContent = C.errText(e); } };
-  const va = $('#viewAs'); if (va) va.onchange = () => { S.viewAs = va.value || null; if (!points().find(p => p.k === S.pt)) S.pt = points()[0].k; render(); };
+  const va = $('#viewAs'); if (va) va.onchange = () => { const [r, p] = (va.value || '').split(':'); S.viewAs = r || null; S.viewAsPt = p || null; if (!points().find(p => p.k === S.pt)) S.pt = points()[0].k; render(); };
   const du2 = $('#doUnreg'); if (du2) du2.onclick = async () => {
     if (!confirm('この端末の登録をやめますか？\n（端末の記録は消えません。このあと受付用・スイーパー用リンクを開くか、参加コードを入れると、その担当として登録し直せます）')) return;
     await C.metaSet('device:' + C.EVENT_ID, null); await C.metaSet('linkjoin:' + C.EVENT_ID, null); await C.metaSet('label', '');
@@ -337,7 +343,7 @@ async function boot() {
   }
   const evId = qs.get('ev') || await C.metaGet('ev', C.DEFAULT_EVENT);
   // 受付用リンク（?ev=…&ck=コード）：コードを端末に控えてURLから消す
-  for (const [role, L] of Object.entries(C.LINK_ROLES)) if (qs.get(L.param)) { await C.metaSet('linkjoin:' + evId, { role, code: qs.get(L.param) }); history.replaceState(null, '', location.pathname); }
+  for (const [role, L] of Object.entries(C.LINK_ROLES)) if (qs.get(L.param)) { await C.metaSet('linkjoin:' + evId, { role, code: qs.get(L.param), pt: qs.get('pt') || '' }); history.replaceState(null, '', location.pathname); }
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
     const reg = await navigator.serviceWorker.getRegistration(); if (reg) { watchUpdate(reg); if (navigator.onLine) reg.update().catch(() => {}); }
