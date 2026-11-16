@@ -1,6 +1,6 @@
 /* 計測端末：一度保存すれば、圏外・機内モードでもページを開き直せる。
    版ごとに保存し直す（版が変わっても、計測中に勝手には切り替えない：画面の「更新する」で切り替え） */
-const CACHE = 'timing-5b2eb5d';
+const CACHE = 'timing-f5f5930';
 const FILES = ['./', 'index.html', 'term.js', 'common.js', 'manifest.json', 'icon-192.png', 'icon-512.png',
   'vendor/firebase.js', 'vendor/jsqr.js', 'vendor/qrcode.js', 'events/index.json', 'events/test-kq50.json', 'events/kq50-2026.json'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' }))))));

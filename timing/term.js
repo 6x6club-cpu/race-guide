@@ -231,12 +231,12 @@ function render() {
       <div class="err" id="joinMsg">${esc(S.joinMsg || '')}</div>
       ${!isAdmin() && S.device ? `<button class="btn sec wide" id="doUnreg" style="margin-top:8px">この端末の登録をやめる（担当を変えるとき）</button>` : ''}
       <details style="margin-top:10px" ${isAdmin() ? 'open' : ''}><summary class="sub">本部の方（Googleでログイン）</summary>
-        ${isAdmin() ? `<div style="margin-top:6px"><b>担当の画面を確認する</b><div class="sub">本部のアカウントのまま、各担当の画面に切り替えて見られます（記録は本部として送られます）。</div>
-          <div class="row"><select id="viewAs"><option value="">本部（すべての地点）＝計測担当と同じ</option>${Object.entries(C.LINK_ROLES).map(([k, L]) => `<option value="${k}" ${S.viewAs === k ? 'selected' : ''}>${esc(L.label)}の画面</option>`).join('')}</select></div></div>
-          <button class="btn sec wide" id="doOut" style="margin-top:6px">ログアウト</button>` : `<button class="btn sec wide" id="doIn" style="margin-top:6px" ${navigator.onLine ? '' : 'disabled'}>Googleでログイン</button>`}
+        ${isAdmin() ? `<button class="btn sec wide" id="doOut" style="margin-top:6px">ログアウト</button>` : `<button class="btn sec wide" id="doIn" style="margin-top:6px" ${navigator.onLine ? '' : 'disabled'}>Googleでログイン</button>`}
         <div class="err" id="inMsg"></div></details></div>
   </details>
-  ${isAdmin() && S.viewAs ? `<div class="card" style="border:2px dashed var(--acc)"><b>確認用の表示：${esc(C.LINK_ROLES[S.viewAs].label)}の画面</b><div class="sub">本部のアカウントで見ています。記録は本部として送られます。</div></div>` : ''}
+  ${isAdmin() ? `<div class="card" style="${S.viewAs ? 'border:2px dashed var(--acc)' : ''}"><b>担当の画面を確認する（本部のみ）</b>
+    <div class="sub">本部のアカウントのまま、各担当の画面に切り替えて見られます${S.viewAs ? '。<b>いまは確認用の表示です</b>' : ''}（記録は本部として送られます）。</div>
+    <div class="row"><select id="viewAs"><option value="">本部（すべての地点）＝計測担当と同じ</option>${Object.entries(C.LINK_ROLES).map(([k, L]) => `<option value="${k}" ${S.viewAs === k ? 'selected' : ''}>${esc(L.label)}の画面</option>`).join('')}</select></div></div>` : ''}
   <div class="card">${linkRole() === 'ck' ? '<h3>受付（受付専用の端末）</h3><div class="sub">選手・ペーサーのスマホの番号画面のQR、または番号（ペーサーは P-23 のように）を入れてください。</div>'
     : linkRole() === 'sweep' ? '<h3>リタイア（スイーパー）</h3><div class="sub">リタイアした選手の番号を入れて「記録」を押してください。圏外でも端末に保存され、電波が入ると本部に届きます。</div>' : '<h3>いま記録する地点</h3>'}<div class="pts" style="margin-top:8px">${points().map(p => `<button class="pt ${S.pt === p.k ? 'sel' : ''}" data-pt="${p.k}">${esc(p.label)}<small>${esc(p.sub || '')}</small></button>`).join('')}</div>
     <div class="cam ${S.cam ? 'show' : ''}"><video id="cv" playsinline muted></video><div class="lbl">${esc(ptLabel(S.pt))}</div></div>
