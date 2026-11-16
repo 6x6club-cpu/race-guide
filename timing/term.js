@@ -10,7 +10,7 @@ const isAdmin = () => !!(S.user && !S.user.isAnonymous);
 const canSend = () => !!(S.user && (isAdmin() || (S.device && S.device.active !== false)));
 /** 受付専用の端末（受付用リンクで登録）：記録できるのは受付だけ */
 /** リンクで登録した端末（受付専用・スイーパー）の役割。登録前でもリンクで開いていればその役割 */
-const linkRole = () => isAdmin() ? null : (S.device ? (C.LINK_ROLES[S.device.role] ? S.device.role : null) : (S.linkPending && S.linkPending.role) || null);
+const linkRole = () => isAdmin() ? (S.viewAs || null) : (S.device ? (C.LINK_ROLES[S.device.role] ? S.device.role : null) : (S.linkPending && S.linkPending.role) || null);
 const isCkOnly = () => !!linkRole();
 const points = () => (S.ev ? S.ev.points : []).filter(p => !linkRole() || C.LINK_ROLES[linkRole()].pts.includes(p.k));
 
@@ -229,10 +229,14 @@ function render() {
         <div class="row"><input id="jlabel" placeholder="端末の名前（例：受付A）" value="${esc(S.label)}" class="sm"></div>
         <div class="row"><input id="jcode" inputmode="numeric" placeholder="参加コード" autocomplete="off" class="sm"><button class="btn" id="doJoin" ${navigator.onLine ? '' : 'disabled'}>登録</button></div>`}
       <div class="err" id="joinMsg">${esc(S.joinMsg || '')}</div>
-      <details style="margin-top:10px"><summary class="sub">本部の方（Googleでログイン）</summary>
-        ${isAdmin() ? `<button class="btn sec wide" id="doOut" style="margin-top:6px">ログアウト</button>` : `<button class="btn sec wide" id="doIn" style="margin-top:6px" ${navigator.onLine ? '' : 'disabled'}>Googleでログイン</button>`}
+      ${!isAdmin() && S.device ? `<button class="btn sec wide" id="doUnreg" style="margin-top:8px">この端末の登録をやめる（担当を変えるとき）</button>` : ''}
+      <details style="margin-top:10px" ${isAdmin() ? 'open' : ''}><summary class="sub">本部の方（Googleでログイン）</summary>
+        ${isAdmin() ? `<div style="margin-top:6px"><b>担当の画面を確認する</b><div class="sub">本部のアカウントのまま、各担当の画面に切り替えて見られます（記録は本部として送られます）。</div>
+          <div class="row"><select id="viewAs"><option value="">本部（すべての地点）＝計測担当と同じ</option>${Object.entries(C.LINK_ROLES).map(([k, L]) => `<option value="${k}" ${S.viewAs === k ? 'selected' : ''}>${esc(L.label)}の画面</option>`).join('')}</select></div></div>
+          <button class="btn sec wide" id="doOut" style="margin-top:6px">ログアウト</button>` : `<button class="btn sec wide" id="doIn" style="margin-top:6px" ${navigator.onLine ? '' : 'disabled'}>Googleでログイン</button>`}
         <div class="err" id="inMsg"></div></details></div>
   </details>
+  ${isAdmin() && S.viewAs ? `<div class="card" style="border:2px dashed var(--acc)"><b>確認用の表示：${esc(C.LINK_ROLES[S.viewAs].label)}の画面</b><div class="sub">本部のアカウントで見ています。記録は本部として送られます。</div></div>` : ''}
   <div class="card">${linkRole() === 'ck' ? '<h3>受付（受付専用の端末）</h3><div class="sub">選手・ペーサーのスマホの番号画面のQR、または番号（ペーサーは P-23 のように）を入れてください。</div>'
     : linkRole() === 'sweep' ? '<h3>リタイア（スイーパー）</h3><div class="sub">リタイアした選手の番号を入れて「記録」を押してください。圏外でも端末に保存され、電波が入ると本部に届きます。</div>' : '<h3>いま記録する地点</h3>'}<div class="pts" style="margin-top:8px">${points().map(p => `<button class="pt ${S.pt === p.k ? 'sel' : ''}" data-pt="${p.k}">${esc(p.label)}<small>${esc(p.sub || '')}</small></button>`).join('')}</div>
     <div class="cam ${S.cam ? 'show' : ''}"><video id="cv" playsinline muted></video><div class="lbl">${esc(ptLabel(S.pt))}</div></div>
@@ -258,6 +262,14 @@ function render() {
   $('#evSel').onchange = e => useEvent(e.target.value);
   const dj = $('#doJoin'); if (dj) dj.onclick = join;
   const di = $('#doIn'); if (di) di.onclick = async () => { try { await C.login(); } catch (e) { $('#inMsg').textContent = C.errText(e); } };
+  const va = $('#viewAs'); if (va) va.onchange = () => { S.viewAs = va.value || null; if (!points().find(p => p.k === S.pt)) S.pt = points()[0].k; render(); };
+  const du2 = $('#doUnreg'); if (du2) du2.onclick = async () => {
+    if (!confirm('この端末の登録をやめますか？\n（端末の記録は消えません。このあと受付用・スイーパー用リンクを開くか、参加コードを入れると、その担当として登録し直せます）')) return;
+    await C.metaSet('device:' + C.EVENT_ID, null); await C.metaSet('linkjoin:' + C.EVENT_ID, null); await C.metaSet('label', '');
+    S.device = null; S.linkPending = null; S.label = ''; S.joinMsg = '';
+    try { await C.logout(); } catch (e) {}
+    render();
+  };
   const dout = $('#doOut'); if (dout) dout.onclick = () => { if (confirm('ログアウトしますか？（端末の記録は消えません）')) C.logout(); };
   const du = $('#doUpd'); if (du) du.onclick = () => { S.swUpdate.postMessage('skipWaiting'); };
   if (S.cam) { const v = $('#cv'); v.srcObject = S.cam.stream; v.play().catch(() => {}); }
