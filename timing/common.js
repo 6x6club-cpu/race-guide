@@ -238,6 +238,36 @@ export async function setStart(catK, actualIso, reason, prev) {
   const hist = [...((prev && prev.history) || []), { at: new Date().toISOString(), by: u.email || u.uid, from: (prev && prev.actual) || null, to: actualIso, reason: reason || '' }];
   await FB.setDoc(FB.doc(db, evPath('starts/' + catK)), { actual: actualIso, history: hist });
 }
+/* ---------- 本番前リセット ----------
+   本部が events/{大会}/meta/reset に「この時刻より前の記録は片付ける」を書き、本部の記録とスタート時刻の修正を消す。
+   端末は次に通信したとき、それより前の自分の記録を本番の一覧から外す（消さずに別に取っておく）。 */
+export async function getReset() {
+  const { db } = firebase();
+  try { const s = await withTimeout(FB.getDocFromServer(FB.doc(db, evPath('meta/reset'))), 10000, 'timeout'); return s.exists() ? s.data().epoch || null : null; } catch (e) { return undefined; }
+}
+export function watchReset(cb, err) { const { db } = firebase(); return FB.onSnapshot(FB.doc(db, evPath('meta/reset')), s => cb(s.exists() ? s.get('epoch') || null : null), err); }
+/** 端末：リセットより前の記録を片付ける（大会の記録から外して取っておく）。片付けた件数を返す */
+export async function archiveBefore(epoch) {
+  const t = (await idb()).transaction('recs', 'readwrite'); const st = t.objectStore('recs');
+  const all = await req(st.getAll()); let n = 0;
+  for (const r of all) if (r.ev === EVENT_ID && Date.parse(r.t) < epoch) { st.put({ ...r, ev: `${EVENT_ID}@reset-${epoch}`, archivedFrom: EVENT_ID }); n++; }
+  await done(t); return n;
+}
+/** 本部：リセットを実行する。戻り値：消した記録の件数 */
+export async function resetEvent() {
+  const { db, auth } = firebase(); const epoch = Date.now();
+  // 先に合図を書く（このあと届く古い記録は、ルールでも受け付けない）
+  await FB.setDoc(FB.doc(db, evPath('meta/reset')), { epoch, at: FB.serverTimestamp(), by: auth.currentUser.email || auth.currentUser.uid });
+  let n = 0;
+  for (const col of ['records', 'starts']) {
+    const snap = await FB.getDocs(FB.collection(db, evPath(col)));
+    for (let i = 0; i < snap.docs.length; i += 400) {
+      const b = FB.writeBatch(db); snap.docs.slice(i, i + 400).forEach(d => b.delete(d.ref)); await b.commit();
+    }
+    if (col === 'records') n = snap.size;
+  }
+  return { n, epoch };
+}
 export async function getJoinCodes() { const { db } = firebase(); const s = await FB.getDoc(FB.doc(db, evPath('private/join'))); const d = s.exists() ? s.data() : {}; return { code: d.code || '', ckCode: d.ckCode || '', swCode: d.swCode || '' }; }
 /** k：'code'（計測担当の参加コード）／'ckCode'（受付用リンクのコード） */
 export async function setJoinCode(k, v) { const { db } = firebase(); await FB.setDoc(FB.doc(db, evPath('private/join')), { [k]: String(v) }, { merge: true }); }

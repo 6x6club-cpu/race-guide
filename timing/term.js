@@ -66,9 +66,21 @@ async function voidRec(id) {
   await save({ bib: r.bib, pt: 'VOID', target: r.id, t: new Date().toISOString(), how: '取消', raw: '', warn: [], label: S.label });
 }
 
+/* ---------- 本番前リセット：本部の合図を受けたら、それより前の記録を片付ける ---------- */
+async function applyReset(epoch) {
+  if (!epoch || epoch === S.resetEpoch) return;
+  const n = await C.archiveBefore(epoch);
+  S.resetEpoch = epoch; await C.metaSet('reset:' + C.EVENT_ID, epoch);
+  await C.metaSet('starts:' + C.EVENT_ID, {}); S.starts = {};
+  S.recs = await C.allRecords(); const last = S.recs.filter(r => r.pt !== 'VOID').pop(); S.last = last && last.id;
+  if (n) S.msg = `本部で本番前リセットが行われました。この端末のテストの記録 ${n} 件を片付けました（端末には別に残しています）。`;
+  render();
+}
 /* ---------- 本部へ送る ---------- */
 async function sync() {
   if (S.sending || !navigator.onLine || !canSend()) return;
+  // 送る前に、本部でリセットされていないか確かめる（リセット前のテストの記録は送らない）
+  const ep = await C.getReset(); if (ep) await applyReset(ep);
   const todo = S.recs.filter(r => r.status !== 'received' && r.status !== 'rejected');
   if (!todo.length) { S.sendErr = ''; return; }
   S.sending = true; renderCounts();
@@ -98,6 +110,7 @@ function watchRemote() {
   S.unsubs.forEach(f => f()); S.unsubs = [];
   if (!canSend() || !navigator.onLine) return;
   S.unsubs.push(C.watchRecords(rs => { S.remote = rs; }, () => {}));
+  S.unsubs.push(C.watchReset(ep => applyReset(ep), () => {}));
   S.unsubs.push(C.watchStarts(st => { S.starts = st; C.metaSet('starts:' + C.EVENT_ID, st); renderLast(); renderList(); }, () => {}));
 }
 
@@ -148,7 +161,7 @@ function watchUpdate(reg) {
 async function useEvent(id) {
   C.setEventId(id); await C.metaSet('ev', id);
   S.ev = await C.loadEvent(id).catch(() => null); S.recs = await C.allRecords(); S.remote = [];
-  S.starts = await C.metaGet('starts:' + id, {});
+  S.starts = await C.metaGet('starts:' + id, {}); S.resetEpoch = await C.metaGet('reset:' + id, null);
   const last = S.recs.filter(r => r.pt !== 'VOID').pop(); S.last = last && last.id;
   if (S.ev && !S.ev.points.find(p => p.k === S.pt)) S.pt = S.ev.points[0].k;
   S.device = await C.metaGet('device:' + id, null); S.linkPending = await C.metaGet('linkjoin:' + id, null);

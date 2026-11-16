@@ -14,7 +14,7 @@ function derived() {
   return { vo, live, cnt, key };
 }
 function render() {
-  const keep = ['stTime', 'stWhy'].map(id => [id, $('#' + id) && $('#' + id).value]);
+  const keep = ['stTime', 'stWhy', 'rsId'].map(id => [id, $('#' + id) && $('#' + id).value]);
   render0();
   keep.forEach(([id, v]) => { const el = $('#' + id); if (el && v != null) el.value = v; });
 }
@@ -130,7 +130,14 @@ function devHTML() {
     ${S.devices.map(d => { const n = S.recs.filter(r => r.by === d.uid).length;
       return `<tr><td><b>${esc(d.label)}</b></td><td>${C.roleLabel(d.role)}</td><td>${esc(d.dev || '')}</td><td>${d.at ? ymdhms(d.at).slice(5, 16) : ''}</td><td>${n}件</td><td>${d.active === false ? '<span class="tag bad">停止中</span>' : '<span class="tag ok">使用中</span>'}</td>
       <td><button class="btn sec" data-dev="${esc(d.uid)}" data-act="${d.active === false ? 1 : 0}">${d.active === false ? '再開' : '停止'}</button></td></tr>`; }).join('') || '<tr><td colspan="7" class="sub">まだ登録された端末はありません</td></tr>'}</table>
-    <p class="sub">紛失した端末や、心当たりのない端末は「停止」すると、その端末からは本部に送れなくなります（端末に残った記録はCSVで回収できます）。</p></div>`;
+    <p class="sub">紛失した端末や、心当たりのない端末は「停止」すると、その端末からは本部に送れなくなります（端末に残った記録はCSVで回収できます）。</p></div>
+  <div class="card" style="border:2px solid var(--bad)"><h3>本番前リセット（テストの記録を片付ける）</h3>
+    <p class="sub" style="margin-top:0">大会前のテストが終わったら押してください。<b>本部の記録（${S.recs.length}件）とスタート時刻の修正を消し</b>、各端末には次に通信したときに「リセットより前の記録を片付ける」合図が届きます（端末の記録は消さずに別に取っておきます）。<br>
+    <b>残るもの</b>：登録した端末・受付用リンク・スイーパー用リンク・参加コード（配ったリンクやQRはそのまま本番で使えます）。<br>
+    リセットのあとに届いた、リセット前に読んだ記録は受け付けません。<b>大会が始まってからは押さないでください。</b></p>
+    ${S.resetAt ? `<p class="sub">前回のリセット：${ymdhms(new Date(S.resetAt).toISOString()).slice(0, 16)}</p>` : ''}
+    <div class="row">確認のため大会のID「<b>${esc(C.EVENT_ID)}</b>」を入力：<input id="rsId" placeholder="${esc(C.EVENT_ID)}" autocomplete="off"><button class="btn" id="rsGo" style="background:var(--bad)">本番前リセットを実行</button></div>
+    <div id="rsMsg" class="sub"></div></div>`;
 }
 /* ---- CSV ---- */
 function csvHTML() {
@@ -175,6 +182,14 @@ function bind() {
     w.document.write(`<!DOCTYPE html><meta charset="utf-8"><title>${L.short}用QR</title><body style="font-family:sans-serif;text-align:center;padding:40px"><h1 style="font-size:40px;margin:0">${L.short}スタッフ用</h1><p style="font-size:22px">${esc(S.ev.name)}</p><div style="width:420px;margin:20px auto">${qrSVG(link)}</div><p style="font-size:20px">スマホのカメラで読み取り、開いたページで記録してください</p><p style="font-size:12px;color:#666;word-break:break-all">${esc(link)}</p><script>setTimeout(()=>print(),300)<\/script></body>`);
     w.document.close();
   });
+  const rg = $('#rsGo'); if (rg) rg.onclick = async () => {
+    if ($('#rsId').value.trim() !== C.EVENT_ID) { $('#rsMsg').textContent = `大会のID「${C.EVENT_ID}」を正しく入力してください`; return; }
+    if (!confirm(`「${S.ev.name}」の本部の記録 ${S.recs.length} 件とスタート時刻の修正を消します。元に戻せません。よろしいですか？`)) return;
+    rg.disabled = true; $('#rsMsg').textContent = 'リセットしています…';
+    try { const r = await C.resetEvent(); S.resetAt = r.epoch; S.resetMsg = `リセットしました（記録 ${r.n} 件を消しました）。各端末は次に通信したときにテストの記録を片付けます。`; }
+    catch (e) { S.resetMsg = 'リセットできませんでした：' + C.errText(e); }
+    render(); const m = $('#rsMsg'); if (m) m.textContent = S.resetMsg || '';
+  };
   $$('[data-dev]').forEach(b => b.onclick = async () => { const act = b.dataset.act === '1'; if (!act && !confirm('この端末を停止しますか？')) return; try { await C.setDeviceActive(b.dataset.dev, act); } catch (e) { alert(C.errText(e)); } });
   const f = $('#csv'); if (f) f.onchange = e => readCSV(e.target.files[0]);
   const ex = $('#exp'); if (ex) ex.onclick = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); C.saveFile(`本部受領_${C.EVENT_ID}_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.csv`, C.toCSV(S.recs.map(r => ({ ...r, status: 'received' })), ptLabel)); };
@@ -193,13 +208,14 @@ async function readCSV(f) {
 }
 async function useEvent(id) {
   C.setEventId(id); try { localStorage.setItem('hq-ev', id); } catch (e) {}
-  S.ev = await C.loadEvent(id); S.recs = []; S.starts = {}; S.devices = []; S.code = null; S.imp = null; S.impMsg = ''; S.err = '';
+  S.ev = await C.loadEvent(id); S.recs = []; S.starts = {}; S.devices = []; S.code = null; S.resetAt = null; S.resetMsg = ''; S.imp = null; S.impMsg = ''; S.err = '';
   unsubs.forEach(f => f()); unsubs = [];
   if (isAdmin()) {
     const er = e => { S.err = '読めません：' + C.errText(e); render(); };
     unsubs.push(C.watchRecords((rs, meta) => { S.recs = rs; S.meta = meta; render(); }, er));
     unsubs.push(C.watchStarts(st => { S.starts = st; render(); }, er));
     unsubs.push(C.watchDevices(ds => { S.devices = ds; render(); }, er));
+    unsubs.push(C.watchReset(ep => { S.resetAt = ep; render(); }, () => {}));
     C.getJoinCodes().then(c => { S.code = c; render(); }).catch(er);
   }
   render();
