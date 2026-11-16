@@ -43,7 +43,7 @@ async function record(raw, how) {
   if (S.pt === 'PO' || S.pt === 'PI') {
     if (!pac) warn.push('ペーサーの番号ではありません（選手はペーサー出発・戻りを記録しません）');
     else if (S.pt === 'PO') { if (!st.ck) warn.push('受付していないペーサーです'); if (st.out) warn.push(`すでにコースに出ています（${who(st.lastOut)} 出発）`); }
-    else if (!st.out) warn.push('出発の記録がありません');
+    // 出発を記録していない「戻り」は、その日の伴走を終えた記録として受け付ける（毎周の出入りは記録できたときだけでよい運用）
   } else {
     if (pac && S.pt !== 'CK') warn.push('ペーサーは計測しません（ペーサー出発・戻りで記録してください）');
     const prev = live.filter(r => r.bib === bib && r.pt === S.pt);

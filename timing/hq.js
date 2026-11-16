@@ -64,17 +64,27 @@ function courseHTML(live) {
   const onCourse = runners.filter(r => r.x.ck && !r.x.gf && !r.x.dn && started(r.c));
   const waiting = runners.filter(r => r.x.ck && !r.x.gf && !r.x.dn && !started(r.c));
   const fin = runners.filter(r => r.x.gf), dn = runners.filter(r => r.x.dn), dns = runners.filter(r => !r.x.ck);
-  const pac = (S.ev.pacers || []).map(b => ({ b, x: st[b] || {} }));
-  const pOut = pac.filter(p => p.x.out), pDone = pac.filter(p => p.x.ck && !p.x.out && p.x.outs), pWait = pac.filter(p => p.x.ck && !p.x.outs), pNo = pac.filter(p => !p.x.ck);
   const runnerOf = b => b.replace(/^P-/, '').split('-')[0];
+  // ペーサーは伴走する選手と一緒に動く。選手がフィニッシュかリタイアしていれば、ペーサーの「戻り」が未記録でも赤くしない
+  const rDone = b => { const r = st[runnerOf(b)] || {}; return r.gf || r.dn; };
+  const pac = (S.ev.pacers || []).map(b => ({ b, x: st[b] || {} }));
+  const pOutAll = pac.filter(p => p.x.out);
+  const pOut = pOutAll.filter(p => !rDone(p.b));                     // 本当にコース上の可能性が高い
+  const pGuess = pOutAll.filter(p => rDone(p.b));                    // 選手は戻っている（ペーサーの戻りは未記録）
+  const pDone = pac.filter(p => !p.x.out && p.x.lastIn);             // 終了（戻りを記録）
+  const pNoEnd = pac.filter(p => p.x.ck && !p.x.out && !p.x.lastIn);  // 受付済み・出発も終了も未記録
+  const pNo = pac.filter(p => !p.x.ck && !p.x.out && !p.x.lastIn);
   const chip = (b, cls, sub) => `<span class="chip ${cls}">${esc(b)}${sub ? `<small>${esc(sub)}</small>` : ''}</span>`;
   return `<div class="card"><div class="kpi">
-      <div><b style="color:${onCourse.length + pOut.length ? 'var(--wait)' : 'var(--ok)'}">${onCourse.length + pOut.length}</b>いまコース上（選手${onCourse.length}・ペーサー${pOut.length}）</div>
+      <div><b style="color:${onCourse.length + pOut.length ? 'var(--wait)' : 'var(--ok)'}">${onCourse.length + pOut.length}</b>いまコース上（選手${onCourse.length}・ペーサー${pOut.length}）</div>${pNoEnd.length ? `<div><b style="color:var(--wait)">${pNoEnd.length}</b>終了の記録がないペーサー</div>` : ''}
       <div><b>${fin.length}</b>フィニッシュ</div><div><b>${dn.length}</b>リタイア</div><div><b>${dns.length}</b>未受付（DNS候補）</div></div>
     ${late && onCourse.length + pOut.length ? `<div class="err" style="margin-top:8px;font-weight:800">最終関門（${hm(S.ev.cutoff)}）を過ぎています。コース上に残っている人を確認してください。</div>` : ''}
-    <p class="sub">コース上の選手＝受付済みで、スタート後、フィニッシュもリタイアもしていない人。ペーサー＝最後の記録が「ペーサー出発」の人。</p></div>
+    <p class="sub">コース上の選手＝受付済みで、スタート後、フィニッシュもリタイアもしていない人。コース上のペーサー＝最後の記録が「ペーサー出発」で、伴走する選手がまだ戻っていない人。</p></div>
   <div class="card"><h3>コース上のペーサー（${pOut.length}人）</h3><div class="chips">${pOut.map(p => chip(p.b, late ? 'bad' : 'w', `No.${runnerOf(p.b)}と ${hm(p.x.lastOut.t)}〜`)).join('') || '<span class="sub">いません</span>'}</div>
-    <p class="sub">戻った（終了・交代）：${pDone.map(p => `${esc(p.b)}（${hm(p.x.lastIn.t)}）`).join('、') || 'なし'}　／　受付済み・まだ出発していない：${pWait.map(p => esc(p.b)).join('、') || 'なし'}　／　未受付：${pNo.map(p => esc(p.b)).join('、') || 'なし'}</p></div>
+    ${pGuess.length ? `<div class="sub" style="margin-top:8px"><b>選手は戻っている（ペーサーの戻りは未記録）</b></div><div class="chips">${pGuess.map(p => { const r = st[runnerOf(p.b)]; return chip(p.b, 'w', `No.${runnerOf(p.b)} ${r.gf ? 'ゴール' : 'リタイア'} ${hm((r.gf || r.dn).t)}`); }).join('')}</div>` : ''}
+    <div class="sub" style="margin-top:8px"><b>受付済みで、終了の記録がないペーサー</b>（伴走を終えたら「ペーサー戻り」を記録。大会の最後に確認）</div>
+    <div class="chips">${pNoEnd.map(p => chip(p.b, late ? 'bad' : '', `受付 ${hm(p.x.ck.t)}`)).join('') || '<span class="sub">なし</span>'}</div>
+    <p class="sub">終了：${pDone.map(p => `${esc(p.b)}（${hm(p.x.lastIn.t)}）`).join('、') || 'なし'}　／　未受付：${pNo.map(p => esc(p.b)).join('、') || 'なし'}</p></div>
   <div class="card"><h3>コース上の選手（${onCourse.length}人）</h3><div class="chips">${onCourse.map(r => chip(r.b, late ? 'bad' : 'w', r.x.g1 ? '1周目済' : '')).join('') || '<span class="sub">いません</span>'}</div>
     ${waiting.length ? `<p class="sub">受付済み・スタート前：${waiting.map(r => esc(r.b)).join('、')}</p>` : ''}
     <p class="sub">リタイア：${dn.map(r => `${esc(r.b)}（${hm(r.x.dn.t)}）`).join('、') || 'なし'}</p></div>`;
