@@ -217,7 +217,7 @@ function render() {
   const prep = !S.swReady || !reg;
   $('#main').innerHTML = `${C.INAPP ? inAppHTML(false) : ''}
   ${S.swUpdate ? `<div class="card"><b>新しい版があります。</b><div class="sub">計測の合間に、通信できる場所で更新してください。記録は消えません。</div><button class="btn wide" id="doUpd" style="margin-top:8px">更新する</button></div>` : ''}
-  <details class="card" ${prep ? 'open' : ''}><summary>準備（通信できるときに）${prep ? '' : '　✓ 完了'}</summary>
+  <details class="card" id="prepBox" ${(S.prepOpen == null ? prep : S.prepOpen) ? 'open' : ''}><summary>準備（通信できるときに）${prep ? '' : '　✓ 完了'}</summary>
     <div style="margin-top:8px"><b>1. 圏外で起動できるようにする</b>
       <div class="sub" id="swMsg">${S.swReady ? `この端末に保存済みです（${esc(BUILD.text)}）。機内モードでもこのページを開き直せます。` : '通信できる場所で押してください。'}</div>
       <button class="btn ${S.swReady ? 'sec' : ''} wide" id="doSW" style="margin-top:6px">${S.swReady ? 'もう一度保存する' : '圏外で使えるように保存'}</button></div>
@@ -251,6 +251,8 @@ function render() {
     <div class="row"><button class="btn sec wide" id="doCSV" ${S.recs.length ? '' : 'disabled'}>CSVを書き出す（圏外でも可）</button></div></div>
   <div class="card"><h3>この端末の記録（新しい順）</h3><div id="list"></div></div>`;
   renderLast(); renderCounts(); renderList();
+  // 準備欄の開け閉めは、本人が操作したとおりに保つ（地点の切り替えなどで勝手に開かない）
+  const pb = $('#prepBox'); if (pb) pb.addEventListener('toggle', () => { S.prepOpen = pb.open; });
   $$('[data-pt]').forEach(b => b.onclick = async () => { S.pt = b.dataset.pt; await C.metaSet('pt', S.pt); render(); });
   $('#doCam').onclick = () => S.cam ? camOff() : camOn();
   const go = async () => { const v = $('#bib').value.trim(); if (v) { $('#bib').value = ''; await record(v, '手入力'); const i = $('#bib'); if (i) i.focus(); } };
