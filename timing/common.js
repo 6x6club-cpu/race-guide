@@ -282,7 +282,8 @@ export async function getJoinCodes() { const { db } = firebase(); const s = awai
 /** k：'code'（計測担当の参加コード）／'ckCode'（受付用リンクのコード） */
 export async function setJoinCode(k, v) { const { db } = firebase(); await FB.setDoc(FB.doc(db, evPath('private/join')), { [k]: String(v) }, { merge: true }); }
 // LINEで送ったときにLINEの中ではなくSafari／Chromeで開くよう openExternalBrowser=1 を付ける（LINEの公式の仕組み）
-export const roleLink = (role, code) => new URL(`./?ev=${encodeURIComponent(EVENT_ID)}&${LINK_ROLES[role].param}=${encodeURIComponent(code)}&openExternalBrowser=1`, location.href).href;
+// 計測端末のURL（本部画面は /timing-hq/、計測端末は /timing/）
+export const roleLink = (role, code) => new URL(`/timing/?ev=${encodeURIComponent(EVENT_ID)}&${LINK_ROLES[role].param}=${encodeURIComponent(code)}&openExternalBrowser=1`, location.origin).href;
 /** アプリ内ブラウザ（LINEなど）：圏外で開き直す仕組み（Service Worker）が使えない */
 const UA = navigator.userAgent || '';
 export const INAPP = /\bLine\//i.test(UA) ? 'LINE' : /Instagram/i.test(UA) ? 'Instagram' : /FBAN|FBAV|FB_IAB/i.test(UA) ? 'Facebook' : /Twitter/i.test(UA) ? 'X（Twitter）' : (!('serviceWorker' in navigator) ? 'このアプリ' : '');

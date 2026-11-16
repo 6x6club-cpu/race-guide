@@ -66,8 +66,8 @@ function ckHTML(live) {
     const all = c.all; const done = all.filter(b => ck.has(String(b))); const not = all.filter(b => !ck.has(String(b)));
     return `<div class="card"><h3>${esc(c.label)}　受付済み <b>${done.length}</b> ／ ${all.length}人　<span class="sub">未受付 ${not.length}人</span></h3>
       <div class="bar"><i style="width:${all.length ? done.length / all.length * 100 : 0}%"></i></div>
-      <div class="sub" style="margin-top:8px">${c.k === 'P' ? '未受付のペーサー' : '未受付（スタート時点で未受付ならDNS候補）'}</div><div class="chips">${not.map(b => `<span class="chip">${b}</span>`).join('') || '<span class="sub">なし</span>'}</div>
-      <details style="margin-top:8px"><summary class="sub">受付済み ${done.length}人</summary><div class="chips">${done.map(b => { const r = ck.get(String(b)); return `<span class="chip ok" title="${esc(r.label || r.dev)} ${hms(r.t)}">${b}<small>${hm(r.t)}</small></span>`; }).join('')}</div></details></div>`;
+      <div class="sub" style="margin-top:8px"><span class="chip ok" style="min-width:0">緑</span>＝受付済み（下に受付時刻）　<span class="chip" style="min-width:0">赤</span>＝未受付${c.k === 'P' ? '' : '（スタート時点で未受付ならDNS候補）'}</div>
+      <div class="chips">${all.map(b => { const r = ck.get(String(b)); return r ? `<span class="chip ok" title="${esc(r.label || r.dev)} ${hms(r.t)}">${b}<small>${hm(r.t)}</small></span>` : `<span class="chip">${b}</span>`; }).join('')}</div></div>`;
   }).join('') + `<div class="card sub">受付の担当ごとの件数：${Object.entries(by).map(([k, n]) => `${esc(k)} ${n}件`).join('、') || 'まだありません'}</div>`;
 }
 /* ---- コース上の人（安全の把握） ---- */
