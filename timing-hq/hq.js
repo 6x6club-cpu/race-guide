@@ -29,12 +29,11 @@ function render0() {
   const { vo, live, cnt, key } = derived();
   const fromCache = S.meta && S.meta.fromCache;
   const tabs = [['notice', 'お知らせ'], ['ck', '受付'], ['course', 'コース上の人'], ['start', 'スタート時刻'], ['rec', '記録・ゴールタイム'], ['dev', '参加コード・端末'], ['staff', 'スタッフ担当'], ['csv', 'CSV']];
-  const hqApp = '<a class="sub" href="https://claude.ai/artifact/H3Yeu1q4Z4CeWKWm1wsA59" target="_blank" rel="noopener">本部統括（名簿・担当・地図）を開く ↗</a>';
   m.innerHTML = `
   <div class="card"><div class="row" style="justify-content:space-between">
     <div class="row"><select id="evSel">${S.evList.map(e => `<option value="${esc(e.id)}" ${e.id === C.EVENT_ID ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
       <span class="tag ${fromCache ? 'w' : 'ok'}">${fromCache ? '本部に接続中…' : '接続中・自動更新'}</span></div>
-    <div class="row">${hqApp}<span class="sub">${esc(S.user.email)}</span><button class="btn sec" id="out">ログアウト</button></div></div>
+    <div class="row"><span class="sub">${esc(S.user.email)}</span><button class="btn sec" id="out">ログアウト</button></div></div>
     ${S.err ? `<div class="err">${esc(S.err)}</div>` : ''}
     <div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div></div>
   <div id="body"></div>`;
