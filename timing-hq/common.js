@@ -311,7 +311,7 @@ export function errText(e) {
 }
 
 /* ---- スタッフ用「今日の担当」（staffview/{個別リンクの文字列}） ----
-   本部統括アプリで作った「スタッフ用ページへ送る内容」を貼り付けて反映する。
+   本部統括で作った「スタッフ用ページへ送る内容」を貼り付けて反映する。
    読めるのはリンクの文字列を知っている人だけ（1件ずつの取得のみ。一覧は本部だけ） */
 export function watchStaffViews(cb, onErr) {
   const { db } = firebase();

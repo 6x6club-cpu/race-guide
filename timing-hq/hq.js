@@ -29,7 +29,7 @@ function render0() {
   const { vo, live, cnt, key } = derived();
   const fromCache = S.meta && S.meta.fromCache;
   const tabs = [['notice', 'お知らせ'], ['ck', '受付'], ['course', 'コース上の人'], ['start', 'スタート時刻'], ['rec', '記録・ゴールタイム'], ['dev', '参加コード・端末'], ['staff', 'スタッフ担当'], ['csv', 'CSV']];
-  const hqApp = '<a class="sub" href="https://claude.ai/artifact/H3Yeu1q4Z4CeWKWm1wsA59" target="_blank" rel="noopener">本部統括アプリ（名簿・担当・地図）を開く ↗</a>';
+  const hqApp = '<a class="sub" href="https://claude.ai/artifact/H3Yeu1q4Z4CeWKWm1wsA59" target="_blank" rel="noopener">本部統括（名簿・担当・地図）を開く ↗</a>';
   m.innerHTML = `
   <div class="card"><div class="row" style="justify-content:space-between">
     <div class="row"><select id="evSel">${S.evList.map(e => `<option value="${esc(e.id)}" ${e.id === C.EVENT_ID ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
@@ -201,12 +201,12 @@ function staffHTML() {
   const nT = b ? Object.keys(b.views) : [];
   const add = nT.filter(t => !curT.has(t)).length, upd = nT.length - add, del = b ? cur.filter(c => !b.views[c.tok]).length : 0;
   return `<div class="card"><h3>スタッフ用「今日の担当」に反映する</h3>
-    <p class="sub" style="margin-top:0">本部統括アプリの「本部：スタッフ用リンク」で「スタッフ用ページへ送る内容をコピー」し、下に貼り付けて「反映」します。予定や時刻を直したときも同じ手順です。スタッフの画面は、通信できるときに最新版を取り直します。</p>
+    <p class="sub" style="margin-top:0">本部統括の「本部：スタッフ用リンク」で「スタッフ用ページへ送る内容をコピー」し、下に貼り付けて「反映」します。予定や時刻を直したときも同じ手順です。スタッフの画面は、通信できるときに最新版を取り直します。</p>
     <textarea id="svText" rows="3" placeholder="ここに貼り付け" style="width:100%;font:inherit;padding:8px;border:2px solid var(--line);border-radius:8px"></textarea>
     <div class="row" style="margin-top:6px"><button class="btn sec" id="svRead">読み取って確認</button>
     ${b ? `<span>反映すると：<b>${nT.length}人分</b>（新しく ${add}・更新 ${upd}）${del ? `、<b class="err">${del}人分のリンクを止める</b>` : ''}　作成 ${esc((b.made || '').replace('T', ' ').slice(5, 16))}</span><button class="btn" id="svGo">反映</button>` : ''}</div>
     ${b && b.skipped && b.skipped.length ? `<div class="sub">リンク未発行・停止中：${b.skipped.map(esc).join('、')}</div>` : ''}
-    ${b && !b.msgr && Object.values(b.views).some(v => v.o && v.o.report) ? '<div class="err">報告先のMessengerのリンクが未設定です（本部統括アプリの「本部：スタッフ用リンク」で設定）</div>' : ''}
+    ${b && !b.msgr && Object.values(b.views).some(v => v.o && v.o.report) ? '<div class="err">報告先のMessengerのリンクが未設定です（本部統括の「本部：スタッフ用リンク」で設定）</div>' : ''}
     <div class="sub" id="svMsg">${esc(S.svMsg)}</div></div>
   <div class="card"><h3>いま開けるリンク（${cur.length}人）</h3>
     <table><tr><th>氏名</th><th>反映</th><th>受付・計測・報告</th><th></th></tr>
@@ -214,7 +214,7 @@ function staffHTML() {
       return `<tr><td>${esc(c.name)}</td><td class="sub">${c.pub && c.pub.toDate ? hm(c.pub.toDate().toISOString()) : '…'}</td>
       <td class="sub">${[L.ck ? '受付' : '', L.timer ? '計測' : '', v.report ? '報告（' + esc(v.report.team) + '）' : ''].filter(Boolean).join('・') || '—'}</td>
       <td><a class="btn sec" href="${esc(C.STAFF_PAGE + '#k=' + c.tok + (C.EVENT_ID !== 'kq50-2026' ? '&ev=' + C.EVENT_ID : ''))}" target="_blank" rel="noopener">開く</a> <button class="btn sec" data-svstop="${esc(c.tok)}">すぐ止める</button></td></tr>`; }).join('') || '<tr><td colspan="4" class="sub">まだありません</td></tr>'}
-    </table><div class="sub">「すぐ止める」を押すと、その人のリンクはすぐ開けなくなります（本部統括アプリ側でも「止める」か「再発行」をしておいてください）。</div></div>`;
+    </table><div class="sub">「すぐ止める」を押すと、その人のリンクはすぐ開けなくなります（本部統括側でも「止める」か「再発行」をしておいてください）。</div></div>`;
 }
 function devHTML() {
   const ld = S.code == null;
@@ -252,7 +252,7 @@ function impHTML() {
 }
 function bindStaff() {
   const r = $('#svRead'); if (!r) return;
-  r.onclick = () => { try { const b = JSON.parse($('#svText').value.trim()); if (b.kind !== '7trails-staff-bundle' || !b.views) throw new Error(); if (b.ev && b.ev !== C.EVENT_ID) { S.svMsg = `貼り付けた内容は ${b.ev} 用です。上で大会を切り替えてください`; S.svIn = null; } else { S.svIn = b; S.svMsg = ''; } } catch (e) { S.svIn = null; S.svMsg = '読み取れませんでした。本部統括アプリでコピーした内容を、そのまま貼り付けてください'; } render(); };
+  r.onclick = () => { try { const b = JSON.parse($('#svText').value.trim()); if (b.kind !== '7trails-staff-bundle' || !b.views) throw new Error(); if (b.ev && b.ev !== C.EVENT_ID) { S.svMsg = `貼り付けた内容は ${b.ev} 用です。上で大会を切り替えてください`; S.svIn = null; } else { S.svIn = b; S.svMsg = ''; } } catch (e) { S.svIn = null; S.svMsg = '読み取れませんでした。本部統括でコピーした内容を、そのまま貼り付けてください'; } render(); };
   const g = $('#svGo'); if (g) g.onclick = async () => {
     const b = S.svIn; const del = S.sv.filter(c => !b.views[c.tok]).length;
     if (del && !confirm(`${del}人分のリンクが開けなくなります。よろしいですか？`)) return;

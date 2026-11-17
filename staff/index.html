@@ -1,17 +1,17 @@
 <!DOCTYPE html>
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="app-build" content="race-app 934e9b4e47e116e61a4449d79a1a55424a8c2aa0 release built 2026-11-17T09:18+09:00">
+<meta name="app-build" content="race-app 3c1061717e71f349ef50aa21700bb2c8973bdf0e release built 2026-11-17T10:20+09:00">
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#592ba7">
-<title>今日の担当｜KUSENBU QUEST 50 スタッフ</title>
+<title>7trails 今日の担当｜KUSENBU QUEST 50</title>
 <style>
 :root{--ink:#16201a;--sub:#5e5870;--line:#d6d0e6;--bg:#eae7f3;--acc:#592ba7;--hi:#c2410c;--ok:#15803d;--okbg:#dcfce7;--wait:#92400e;--waitbg:#fef3c7;--bad:#b91c1c}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
 body{margin:0;font:16px/1.55 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;color:var(--ink);background:var(--bg)}
-header{background:var(--acc);color:#fff;padding:12px 16px;padding-top:max(12px,env(safe-area-inset-top))}
-header .ev{font-size:12px;opacity:.8}header .nm{font-size:20px;font-weight:800}header .rl{font-size:14px;opacity:.9}
+header{background:var(--acc);color:#fff;padding:10px 14px;padding-top:max(10px,env(safe-area-inset-top));display:flex;gap:10px;align-items:flex-start}header .hb{flex:1;min-width:0}header .hk{font-size:11px;letter-spacing:.08em;opacity:.8;font-weight:700}header .ht{font-size:19px;font-weight:800;line-height:1.3}header .hs{font-size:12.5px;color:#e2d9f3}header .hx{flex:none;color:#fff;text-decoration:none;font-size:12px;font-weight:700;border:1.5px solid rgba(255,255,255,.7);border-radius:999px;padding:5px 10px;white-space:nowrap}
+header #nm{color:#fff;font-size:15px}
 main{max-width:560px;margin:0 auto;padding:10px 10px 30px}
 .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 10px}
 .card h2{margin:0 0 6px;font-size:13px;color:var(--sub);font-weight:700;letter-spacing:.04em}
@@ -35,9 +35,9 @@ ol.steps{margin:6px 0 10px;padding-left:1.4em}ol.steps li{margin:3px 0}
 footer{text-align:center;color:var(--sub);font-size:11.5px;padding:10px}
 </style></head>
 <body>
-<header><div class="ev">KUSENBU QUEST 50 スタッフ</div><div class="nm" id="nm">今日の担当</div><div class="rl" id="rl"></div></header>
+<header><div class="hb"><div class="hk">7trails</div><div class="ht">今日の担当</div><div class="hs">KUSENBU QUEST 50 ｜ <b id="nm"></b> <span id="rl"></span></div></div></header>
 <main id="main"><div class="card">読み込み中…</div></main>
-<footer id="ft">版 race-app 934e9b4（11/17 09:18 作成）</footer>
+<footer id="ft">版 race-app 3c10617（11/17 10:20 作成）</footer>
 <script>
 /* スタッフ用「今日の担当」
    ・リンク（#k=…）を開くと、本部が反映した自分1人分の担当表を読む（他の人の分は読めない：サーバー側のルールで制限）
@@ -96,10 +96,10 @@ function bigCard(x,cls,label){
 function render(){
   const m=$('#main');
   if(!tok){m.innerHTML=`<div class="card"><div class="big">リンクが正しくありません</div><p>本部からMessengerで届いた「今日の担当」のリンクを、もう一度開いてください。</p></div>`;return}
-  if(gone){$('#nm').textContent='今日の担当';$('#rl').textContent='';
+  if(gone){$('#nm').textContent='';$('#rl').textContent='';
     m.innerHTML=`<div class="card"><div class="big">このリンクは使えなくなりました</div><p>本部で止めたか、新しいリンクに変わりました。Messengerで本部に確認してください。</p></div>`;return}
   if(!V){m.innerHTML=`<div class="card">${fetching||!msg?'読み込み中…':esc(msg)+'<p class="sub">一度、電波のある所で開くと、その後は圏外でも見られます。</p>'}</div>`;return}
-  $('#nm').textContent=V.name+' さん';$('#rl').textContent=V.role||'';document.title=`${V.name}さんの担当｜KQ50`;
+  $('#nm').textContent=V.name+' さん';$('#rl').textContent=V.role?'（'+V.role+'）':'';document.title=`7trails 今日の担当｜${V.name}さん`;
   const ni=nowInfo();const its=V.items||[];
   const cur=ni.day?its.filter(x=>x.k!=='handover'&&tmin(x.s)!=null&&tmin(x.s)<=ni.t&&(x.e?ni.t<tmin(x.e):true)).slice(-1)[0]:null;
   const next=(ni.day?its.find(x=>tmin(x.s)!=null&&tmin(x.s)>ni.t):its.find(x=>tmin(x.s)!=null))||null;
