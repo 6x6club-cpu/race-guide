@@ -1,6 +1,6 @@
 /* スタッフ用「今日の担当」：ページ本体を保存し、圏外でも開けるようにする。
    通信できるときはいつも最新のページを取り直す（担当のデータは端末の保存版とは別に、本部から読む） */
-const CACHE = 'staff-67af714';
+const CACHE = 'staff-934e9b4';
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.add(new Request('./', { cache: 'reload' }))).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil((async () => {
   for (const k of await caches.keys()) if (k.startsWith('staff-') && k !== CACHE) await caches.delete(k);
