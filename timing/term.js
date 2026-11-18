@@ -13,6 +13,8 @@ const canSend = () => !!(S.user && (isAdmin() || (S.device && S.device.active !=
 const linkRole = () => isAdmin() ? (S.viewAs || null) : (S.device ? (C.LINK_ROLES[S.device.role] ? S.device.role : null) : (S.linkPending && S.linkPending.role) || null);
 const isCkOnly = () => !!linkRole();
 const rolePt = () => isAdmin() ? S.viewAsPt : (S.device ? S.device.pt : (S.linkPending && S.linkPending.pt));
+/** 担当が決まっていない端末（登録をやめた直後など）：記録させない */
+const noRole = () => !isAdmin() && !S.device && !S.linkPending;
 const points = () => { const r = linkRole(), al = r && C.rolePts(r, rolePt()); return (S.ev ? S.ev.points : []).filter(p => !r || (al || []).includes(p.k)); };
 
 /* ---------- 音と画面の合図（圏外でも鳴る） ---------- */
@@ -35,6 +37,7 @@ function liveAll() {
   return all.filter(r => r.pt !== 'VOID' && !vo.has(r.id));
 }
 async function record(raw, how) {
+  if (noRole()) { S.msg = '担当が決まっていないため記録できません'; beep(false); render(); return; }
   if (linkRole() && !points().find(p => p.k === S.pt)) S.pt = points()[0].k;
   const bib = C.bibOf(raw);
   if (!bib) { S.msg = `番号を読み取れませんでした（${esc(String(raw).slice(0, 40))}）`; beep(false); render(); return; }
@@ -242,14 +245,14 @@ function render() {
   ${isAdmin() ? `<div class="card" style="${S.viewAs ? 'border:2px dashed var(--acc)' : ''}"><b>担当の画面を確認する（本部のみ）</b>
     <div class="sub">本部のアカウントのまま、各担当の画面に切り替えて見られます${S.viewAs ? '。<b>いまは確認用の表示です</b>' : ''}（記録は本部として送られます）。</div>
     <div class="row"><select id="viewAs"><option value="">本部（すべての地点）＝計測担当と同じ</option>${Object.entries(C.LINK_ROLES).filter(([k]) => k !== 'cp').map(([k, L]) => `<option value="${k}" ${S.viewAs === k ? 'selected' : ''}>${esc(L.label)}の画面</option>`).join('')}${(S.ev ? S.ev.points : []).filter(p => p.cp).map(p => `<option value="cp:${p.k}" ${S.viewAs === 'cp' && S.viewAsPt === p.k ? 'selected' : ''}>CP担当（${esc(p.label)}）の画面</option>`).join('')}</select></div></div>` : ''}
-  <div class="card">${linkRole() === 'ck' ? '<h3>受付（受付専用の端末）</h3><div class="sub">選手・ペーサーのスマホの番号画面のQR、または番号（ペーサーは P-23 のように）を入れてください。</div>'
+  ${noRole() ? `<div class="card"><h3>担当が決まっていません</h3><div class="sub">この端末では、いまは記録できません。受付の方は、本部から届いた受付用リンクを開き直してください。計測担当の方は、上の「準備」で参加コードを入れて登録してください。これまでの記録は、この端末に残っています。</div></div>` : `<div class="card">${linkRole() === 'ck' ? '<h3>受付（受付専用の端末）</h3><div class="sub">選手・ペーサーのスマホの番号画面のQR、または番号（ペーサーは P-23 のように）を入れてください。</div>'
     : linkRole() === 'cp' ? `<h3>${esc(ptLabel(rolePt()))}（CP担当）</h3><div class="sub">通過した選手のQRを読むか番号を入れてください。リタイアした選手は「リタイア」で記録します。</div>`
     : linkRole() === 'sweep' ? '<h3>リタイア（スイーパー）</h3><div class="sub">リタイアした選手の番号を入れて「記録」を押してください。圏外でも端末に保存され、電波が入ると本部に届きます。</div>' : '<h3>いま記録する地点</h3>'}<div class="pts" style="margin-top:8px">${points().map(p => `<button class="pt ${S.pt === p.k ? 'sel' : ''}" data-pt="${p.k}">${esc(p.label)}<small>${esc(p.sub || '')}</small></button>`).join('')}</div>
     <div class="cam ${S.cam ? 'show' : ''}"><video id="cv" playsinline muted></video><div class="lbl">${esc(ptLabel(S.pt))}</div></div>
     <div class="row"><button class="btn ${S.cam ? 'sec' : ''}" id="doCam">${S.cam ? 'カメラを止める' : 'QRを読む'}</button>
       <button class="btn sec" id="doP" title="ペーサー番号を入れる">P</button><input id="bib" inputmode="numeric" pattern="[0-9]*" placeholder="番号" autocomplete="off"><button class="btn" id="doRec">記録</button></div>
     <div class="sub" style="margin-top:4px">ペーサーは「P」を押してから番号（P-17-1 は 17.1）</div>
-    ${S.msg ? `<div class="warn">${S.msg}</div>` : ''}</div>
+    ${S.msg ? `<div class="warn">${S.msg}</div>` : ''}</div>`}
   <div id="lastBox"></div>
   <div class="card"><div class="counts" id="counts"></div>
     <div class="row"><button class="btn wide" id="doSend" ${navigator.onLine && reg && unsent && !S.sending ? '' : 'disabled'}>${S.sending ? '送信中…' : '本部に送る'}</button></div>
@@ -260,10 +263,12 @@ function render() {
   // 準備欄の開け閉めは、本人が操作したとおりに保つ（地点の切り替えなどで勝手に開かない）
   const pb = $('#prepBox'); if (pb) pb.addEventListener('toggle', () => { S.prepOpen = pb.open; });
   $$('[data-pt]').forEach(b => b.onclick = async () => { S.pt = b.dataset.pt; await C.metaSet('pt', S.pt); render(); });
-  $('#doCam').onclick = () => S.cam ? camOff() : camOn();
-  const go = async () => { const v = $('#bib').value.trim(); if (v) { $('#bib').value = ''; await record(v, '手入力'); const i = $('#bib'); if (i) i.focus(); } };
-  $('#doP').onclick = () => { const i = $('#bib'); i.setAttribute('inputmode', 'decimal'); i.removeAttribute('pattern'); i.value = 'P'; i.focus(); };
-  $('#doRec').onclick = go; $('#bib').onkeydown = e => { if (e.key === 'Enter') go(); };
+  if (!noRole()) {
+    $('#doCam').onclick = () => S.cam ? camOff() : camOn();
+    const go = async () => { const v = $('#bib').value.trim(); if (v) { $('#bib').value = ''; await record(v, '手入力'); const i = $('#bib'); if (i) i.focus(); } };
+    $('#doP').onclick = () => { const i = $('#bib'); i.setAttribute('inputmode', 'decimal'); i.removeAttribute('pattern'); i.value = 'P'; i.focus(); };
+    $('#doRec').onclick = go; $('#bib').onkeydown = e => { if (e.key === 'Enter') go(); };
+  } else if (S.cam) camOff();
   $('#doSend').onclick = () => sync();
   $('#doCSV').onclick = exportCSV;
   $('#doSW').onclick = swInstall;
