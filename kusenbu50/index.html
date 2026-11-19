@@ -300,22 +300,91 @@ async function sha256(s){const b=await crypto.subtle.digest('SHA-256',new TextEn
 function renderCert(){
   const R=D.results;
   if(!R||!R.published){$('#main').innerHTML=`<a class="back" href="#top">← 大会案内</a><div class="card">記録証は大会後に公開します。</div>`;return}
-  $('#main').innerHTML=`<a class="back" href="#top">← 大会案内</a><div class="card"><h2 style="margin:0 0 8px;font-size:18px">記録証</h2>
-   <div class="muted">ゼッケン番号と、${esc(R.authLabel||'本人確認コード')}を入れてください。</div>
-   <input id="cbib" inputmode="numeric" placeholder="ゼッケン番号" value="${esc(LS.get('kq50-bib',''))}" style="margin-top:10px">
-   <input id="ccode" inputmode="numeric" placeholder="${esc(R.authLabel||'本人確認コード')}" style="margin-top:8px" autocomplete="off">
-   <button class="btn" id="cgo" style="margin-top:10px">確認する</button><div id="cmsg"></div><div id="cout"></div></div>`;
-  $('#cgo').onclick=async()=>{
-    const bib=$('#cbib').value.trim(),code=$('#ccode').value.trim(),x=findRow(bib);$('#cout').innerHTML='';
-    if(!x){$('#cmsg').innerHTML='<div class="err">このゼッケン番号のリザルトはありません</div>';return}
-    const h=await sha256(R.salt+'|'+(+bib)+'|'+code);
-    if(h!==x.auth){$('#cmsg').innerHTML=`<div class="err">${esc(R.authLabel||'本人確認コード')}が一致しません</div>`;return}
-    if(!x.time){$('#cmsg').innerHTML=`<div class="err">完走記録がないため、記録証は発行されません（${esc(x.status)}）</div>`;return}
-    $('#cmsg').innerHTML='';const cv=drawCert(x);$('#cout').appendChild(cv);
-    const b=document.createElement('button');b.className='btn';b.textContent='PDFをダウンロード';b.onclick=()=>downloadPDF(cv,`KUSENBU50_記録証_No${x.bib}.pdf`);$('#cout').appendChild(b);
+  const me=LS.get('kq50-me',null);
+  $('#main').innerHTML=`<a class="back" href="#top">← 大会案内</a><div class="card"><h2 style="margin:0 0 8px;font-size:18px">記録証・賞状</h2>
+   <div class="muted">エントリーしたお名前を入れてください（ゼッケン番号を調べるときと同じです）。完走した方に記録証、入賞した方に賞状を出します。</div>
+   <input id="cname" placeholder="例：九千部 太郎" value="${esc(me&&me.name||'')}" style="margin-top:10px" autocomplete="name">
+   <button class="btn" id="cgo" style="margin-top:10px">記録証を出す</button><div id="cmsg"></div><div id="cout"></div></div>`;
+  const go=async()=>{
+    const v=$('#cname').value.trim(),m=$('#cmsg'),out=$('#cout');out.innerHTML='';
+    if(!v){m.innerHTML='<div class="err">お名前を入れてください</div>';return}
+    m.innerHTML='<div class="muted">確認しています…</div>';
+    const list=await lookupBib(v).catch(()=>[]);
+    if(!list.length){m.innerHTML='<div class="err">見つかりませんでした。<br>・姓と名をどちらも入れてください<br>・漢字の字体が違うと見つからないことがあります。カタカナかローマ字でもお試しください</div>';return}
+    const hits=list.map(e=>({e,x:findRow(e.bib)})),fin=hits.filter(h=>h.x&&h.x.time);
+    if(!fin.length){const h=hits.find(h=>h.x);m.innerHTML=`<div class="err">${h?`完走記録がないため、記録証は発行されません（${esc(h.x.status)}）`:'リザルトに記録がありません'}</div>`;return}
+    m.innerHTML='<div class="muted">記録証を作っています…</div>';
+    try{
+      const C=await certCfg();
+      for(const h of fin){
+        const cv=C?await drawCert(h.x,h.e.name||h.x.name,C):drawCertPlain(h.x);cv.className='cert';out.appendChild(cv);
+        const fn=`KUSENBU50_${C?certKind(h.x,C).title:'記録証'}_No${h.x.bib}`,row=document.createElement('div');row.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px';
+        const b1=document.createElement('button');b1.className='btn';b1.textContent='PDFで保存';b1.onclick=()=>downloadPDF(cv,fn+'.pdf');
+        const b2=document.createElement('button');b2.className='btn sec';b2.textContent='画像で保存';b2.onclick=()=>saveImage(cv,fn+'.jpg');
+        row.append(b1,b2);out.appendChild(row);
+      }
+      m.innerHTML='';
+    }catch(e){m.innerHTML='<div class="err">記録証を作れませんでした。通信できる場所で、もう一度お試しください</div>'}
   };
+  $('#cgo').onclick=go;$('#cname').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go()}});
 }
-function drawCert(x){
+/* 大会ごとの記録証の設定（下地の画像・大会名・本文など）：data/cert.json */
+let CERT;
+async function certCfg(){if(CERT!==undefined)return CERT;try{const r=await fetch('data/cert.json?t='+Date.now(),{cache:'no-store'});CERT=r.ok?await r.json():null}catch(e){CERT=null}return CERT}
+function loadCSS(href){const o=document.querySelector(`link[href="${href}"]`);if(o)return o._p;const l=document.createElement('link');l.rel='stylesheet';l.href=href;l._p=new Promise(ok=>{l.onload=ok;l.onerror=ok});document.head.appendChild(l);return l._p}
+function loadImg(src){return new Promise((ok,ng)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=ng;i.src=src})}
+/* 賞状か記録証か、どの順位を書くか（入賞の範囲は cert.json の award） */
+function certKind(x,C){
+  const a=C.award||{},c=(D.results.counts||{})[x.cat]||{},n=k=>c[k]||0,sx=x.sex==='女'?'女子':'男子';
+  if(x.rank&&x.rank<=(a.overall||0))return {title:'賞状',lab:'総合',rank:x.rank,n:n('all')};
+  if(x.sexRank&&x.sexRank<=(a.gender||0))return {title:'賞状',lab:sx,rank:x.sexRank,n:n(x.sex)};
+  return {title:'記録証',lab:'総合',rank:x.rank,n:n('all')};
+}
+async function drawCert(x,name,C){
+  await loadCSS('../fonts/cert-fonts.css');
+  const k=certKind(x,C),cat=(C.cats&&(C.cats[x.cat]||C.cats[bibInfo(x.bib).cat]))||(D.results.cats&&D.results.cats[x.cat])||x.cat;
+  const L1=`種目：${cat}`,L2=k.rank?`${k.lab}：${k.rank}位${k.n?`（${k.rank}/${k.n}）`:''}`:'';
+  const S1=`あなたは、${C.race}において、`,S2=k.title==='賞状'?C.msgAward:C.msgFinish;
+  const SER="'KQ Serif'",SAN="'KQ Sans'";
+  await document.fonts.ready;
+  await Promise.all([[`500 60px ${SER}`,k.title+L1+L2+'殿'+x.time],[`600 112px ${SER}`,name],[`400 33px ${SAN}`,'記録'+C.body+C.date+C.org.join('')],[`700 44px ${SAN}`,S1+S2]].map(([f,t])=>document.fonts.load(f,t)));
+  const bg=await loadImg(C.bg),W=C.w,H=C.h,cv=document.createElement('canvas');cv.width=W;cv.height=H;
+  const g=cv.getContext('2d'),cx=W/2;g.drawImage(bg,0,0,W,H);g.fillStyle=C.ink||'#231815';
+  const put=(t,font,x0,y,al='center',base='middle')=>{g.font=font;g.textAlign=al;g.textBaseline=base;g.fillText(t,x0,y)};
+  put(k.title,`500 64px ${SER}`,cx,649);
+  put(L1,`500 56px ${SER}`,cx,780);
+  if(L2)put(L2,`500 58px ${SER}`,cx,876);
+  let fs=106;g.font=`600 ${fs}px ${SER}`;while(g.measureText(name).width>860&&fs>56){fs-=4;g.font=`600 ${fs}px ${SER}`}
+  put(name,g.font,cx,1046);const nw=g.measureText(name).width;put('殿',`500 50px ${SER}`,cx+nw/2+44,1050,'left');
+  put('記録',`400 50px ${SAN}`,537,1240,'left');
+  spaced(g,x.time,715,1268,`500 80px ${SER}`,6);
+  g.fillRect(534,1311,718,2);
+  put(S1,`700 41px ${SAN}`,cx,1425);put(S2,`700 41px ${SAN}`,cx,1494);
+  wrapJP(g,C.body,333,1603,1452-333,61.5,`400 33px ${SAN}`,1);
+  put(C.date,`400 33px ${SAN}`,cx+12,1965);
+  put(C.org[0]||'',`400 29px ${SAN}`,cx+12,2086);put(C.org[1]||'',`400 29px ${SAN}`,cx+12,2136);
+  return cv;
+}
+function spaced(g,t,x,y,font,ls){g.font=font;g.textAlign='left';g.textBaseline='alphabetic';for(const ch of t){g.fillText(ch,x,y);x+=g.measureText(ch).width+ls}}
+/* 日本語の段落を折り返す：句読点は行頭に来ないよう前の行にぶら下げ、英数字の語は分けない */
+function wrapJP(g,text,x,y,w,lh,font,ls){
+  g.font=font;g.textAlign='left';g.textBaseline='middle';
+  const toks=text.match(/[A-Za-z0-9.,%\-]+|[\s\S]/g)||[],NG='、。，．）」』！？・ーぁぃぅぇぉっゃゅょァィゥェォッャュョ';
+  const tw=t=>[...t].reduce((s,c)=>s+g.measureText(c).width+ls,0);
+  let line=[],lw=0;const lines=[];
+  for(const t of toks){if(t==='\n'){lines.push(line);line=[];lw=0;continue}const a=tw(t);
+    if(lw+a-ls>w&&line.length&&!NG.includes(t[0])){lines.push(line);line=[];lw=0}line.push(t);lw+=a}
+  if(line.length)lines.push(line);
+  // 最後の行以外は両端をそろえる
+  lines.forEach((l,i)=>{const cs=l.flatMap(t=>[...t]),last=i===lines.length-1,used=cs.reduce((s,c)=>s+g.measureText(c).width,0),gap=last?ls:Math.min(ls*4,(w-used)/Math.max(1,cs.length-1));let cx=x;for(const c of cs){g.fillText(c,cx,y+i*lh);cx+=g.measureText(c).width+gap}});
+}
+async function saveImage(cv,name){
+  const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));const f=new File([blob],name,{type:'image/jpeg'});
+  if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f]});return}catch(e){if(e.name==='AbortError')return}}
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);
+}
+/* cert.json がないときの簡易版 */
+function drawCertPlain(x){
   const R=D.results,W=1240,H=1754,cv=document.createElement('canvas');cv.width=W;cv.height=H;cv.className='cert';const g=cv.getContext('2d');
   const F='"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif',S='"Hiragino Sans","Noto Sans JP",sans-serif';
   g.fillStyle='#fff';g.fillRect(0,0,W,H);g.strokeStyle='#592ba7';g.lineWidth=6;g.strokeRect(60,60,W-120,H-120);g.lineWidth=2;g.strokeRect(80,80,W-160,H-160);
