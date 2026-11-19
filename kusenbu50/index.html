@@ -333,27 +333,29 @@ let CERT;
 async function certCfg(){if(CERT!==undefined)return CERT;try{const r=await fetch('data/cert.json?t='+Date.now(),{cache:'no-store'});CERT=r.ok?await r.json():null}catch(e){CERT=null}return CERT}
 function loadCSS(href){const o=document.querySelector(`link[href="${href}"]`);if(o)return o._p;const l=document.createElement('link');l.rel='stylesheet';l.href=href;l._p=new Promise(ok=>{l.onload=ok;l.onerror=ok});document.head.appendChild(l);return l._p}
 function loadImg(src){return new Promise((ok,ng)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=ng;i.src=src})}
-/* 賞状か記録証か、どの順位を書くか（入賞の範囲は cert.json の award） */
+/* 賞状か記録証か、どの順位を書くか（入賞の範囲は cert.json の award）
+   入賞者（男女別の上位）：男子／女子の順位と総合順位の2行。それ以外：総合順位の1行 */
 function certKind(x,C){
   const a=C.award||{},c=(D.results.counts||{})[x.cat]||{},n=k=>c[k]||0,sx=x.sex==='女'?'女子':'男子';
-  if(x.rank&&x.rank<=(a.overall||0))return {title:'賞状',lab:'総合',rank:x.rank,n:n('all')};
-  if(x.sexRank&&x.sexRank<=(a.gender||0))return {title:'賞状',lab:sx,rank:x.sexRank,n:n(x.sex)};
-  return {title:'記録証',lab:'総合',rank:x.rank,n:n('all')};
+  const line=(lab,r,k)=>r?`${lab}：${r}位${n(k)?`（${r}/${n(k)}）`:''}`:'';
+  const prize=(x.sexRank&&x.sexRank<=(a.gender||0))||(x.rank&&x.rank<=(a.overall||0));
+  return prize?{title:'賞状',lines:[line(sx,x.sexRank,x.sex),line('総合',x.rank,'all')].filter(Boolean)}:{title:'記録証',lines:[line('総合',x.rank,'all')].filter(Boolean)};
 }
 async function drawCert(x,name,C){
   await loadCSS('../fonts/cert-fonts.css');
   const k=certKind(x,C),cat=(C.cats&&(C.cats[x.cat]||C.cats[bibInfo(x.bib).cat]))||(D.results.cats&&D.results.cats[x.cat])||x.cat;
-  const L1=`種目：${cat}`,L2=k.rank?`${k.lab}：${k.rank}位${k.n?`（${k.rank}/${k.n}）`:''}`:'';
+  const L1=`種目：${cat}`,LS2=k.lines;
   const S1=`あなたは、${C.race}において、`,S2=k.title==='賞状'?C.msgAward:C.msgFinish;
   const SER="'KQ Serif'",SAN="'KQ Sans'";
   await document.fonts.ready;
-  await Promise.all([[`500 60px ${SER}`,k.title+L1+L2+'殿'+x.time],[`600 112px ${SER}`,name],[`400 33px ${SAN}`,'記録'+C.body+C.date+C.org.join('')],[`700 44px ${SAN}`,S1+S2]].map(([f,t])=>document.fonts.load(f,t)));
+  await Promise.all([[`500 60px ${SER}`,k.title+L1+LS2.join('')+'殿'+x.time],[`600 112px ${SER}`,name],[`400 33px ${SAN}`,'記録'+C.body+C.date+C.org.join('')],[`700 44px ${SAN}`,S1+S2]].map(([f,t])=>document.fonts.load(f,t)));
   const bg=await loadImg(C.bg),W=C.w,H=C.h,cv=document.createElement('canvas');cv.width=W;cv.height=H;
   const g=cv.getContext('2d'),cx=W/2;g.drawImage(bg,0,0,W,H);g.fillStyle=C.ink||'#231815';
   const put=(t,font,x0,y,al='center',base='middle')=>{g.font=font;g.textAlign=al;g.textBaseline=base;g.fillText(t,x0,y)};
   put(k.title,`500 64px ${SER}`,cx,649);
-  put(L1,`500 56px ${SER}`,cx,780);
-  if(L2)put(L2,`500 58px ${SER}`,cx,876);
+  // 種目と順位：2行なら完成イメージどおり、3行（入賞者）なら少し詰める
+  const ys=LS2.length>1?[752,838,924]:[780,876],fz=LS2.length>1?54:58;
+  put(L1,`500 ${fz-2}px ${SER}`,cx,ys[0]);LS2.forEach((t,i)=>put(t,`500 ${fz}px ${SER}`,cx,ys[i+1]));
   let fs=106;g.font=`600 ${fs}px ${SER}`;while(g.measureText(name).width>860&&fs>56){fs-=4;g.font=`600 ${fs}px ${SER}`}
   put(name,g.font,cx,1046);const nw=g.measureText(name).width;put('殿',`500 50px ${SER}`,cx+nw/2+44,1050,'left');
   put('記録',`400 50px ${SAN}`,537,1240,'left');
