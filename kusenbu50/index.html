@@ -353,7 +353,7 @@ function certKind(x,C){
   const a=C.award||{},c=(D.results.counts||{})[x.cat]||{},n=k=>c[k]||0,sx=x.sex==='女'?'女子':'男子';
   const line=(lab,r,k)=>r?`${lab}：${r}位${n(k)?`（${r}/${n(k)}）`:''}`:'';
   const prize=(!a.cats||a.cats.includes(x.cat))&&((x.sexRank&&x.sexRank<=(a.gender||0))||(x.rank&&x.rank<=(a.overall||0)));
-  return prize?{title:'賞状',lines:[line(sx,x.sexRank,x.sex),line('総合',x.rank,'all')].filter(Boolean)}:{title:'記録証',lines:[line('総合',x.rank,'all')].filter(Boolean)};
+  return prize?{title:'賞状',lines:[a.gender?line(sx,x.sexRank,x.sex):'',line('総合',x.rank,'all')].filter(Boolean)}:{title:'記録証',lines:[line('総合',x.rank,'all')].filter(Boolean)};
 }
 /* 種目ごとの設定：cert.json の byCat に種目の分があれば、その項目だけ差し替える（なければ共通の設定を流用） */
 const certFor=(C,x)=>C&&C.byCat&&C.byCat[x.cat]?{...C,...C.byCat[x.cat]}:C;
