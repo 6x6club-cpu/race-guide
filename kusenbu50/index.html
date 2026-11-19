@@ -41,6 +41,8 @@ canvas.cert{width:100%;border:1px solid var(--line);border-radius:6px;margin:10p
 #bigbib{justify-content:flex-start}#bigbib>:first-child{margin-top:auto}#bigbib>:last-child{margin-bottom:auto}#bigbib .n{font-size:min(36vw,260px)}#bigbib .n.s{font-size:min(26vw,190px)}#bigbib .n.xs{font-size:min(19vw,140px);white-space:nowrap}
 #bigbib .qr{background:#fff;border-radius:14px;padding:10px;margin:14px auto 0;width:min(52vw,210px)}#bigbib .qr svg{display:block;width:100%;height:auto}#bigbib .qrl{font-size:13px;color:#e2d9f3;margin-top:6px}
 #bigbib .say{font-size:18px;margin:18px 0 22px;line-height:1.5}#bigbib .x{background:#fff;color:var(--acc);border:0;border-radius:12px;padding:14px 40px;font-size:18px;font-weight:800}
+.pkb{display:block;width:100%;box-sizing:border-box;border:3px solid #fff;border-radius:14px;padding:10px 14px;margin:12px auto 0;max-width:440px;font-size:30px;font-weight:900;line-height:1.2;color:#fff}.pkb small{display:block;font-size:17px;font-weight:800;line-height:1.45;margin-top:4px}
+.pkb.ok{background:#15803d}.pkb.ng{background:#dc2626}.pkb.sm{font-size:22px;padding:8px 10px;margin:8px auto 4px}.pkb.sm small{font-size:14px}
 #bigbib .cand{border-top:1px solid rgba(255,255,255,.35);padding:10px 0;width:100%;max-width:420px}
 
 .inapp{border:3px solid #f59e0b;background:#fffbeb}.inapp a.btn{display:block;text-align:center;text-decoration:none}
@@ -166,29 +168,44 @@ async function openName(enc,k){
 async function lookupBib(name){
   const k=normName(name);if(!k||!D.bibs)return [];
   const hit=D.bibs.h[(await sha256(D.bibs.salt+'|'+k)).slice(0,16)]||[];
-  return Promise.all(hit.map(async e=>Array.isArray(e)?{bib:e[0],name:await openName(e[1],k)}:{bib:e,name:''}));
+  return Promise.all(hit.map(async e=>{if(!Array.isArray(e))return {bib:e,name:'',pk:''};const s=await openName(e[1],k);
+    if(s.startsWith('{')){try{const o=JSON.parse(s);return {bib:e[0],name:o.n||'',pk:o.pk||''}}catch(x){}}return {bib:e[0],name:s,pk:''}}));
 }
 /* 受付で読み取る番号のQR（中身は番号だけ。端末の中で作るので圏外でも出る） */
 function qrHTML(bib){try{if(typeof qrcode!=='function')return '';const q=qrcode(0,'M');q.addData(String(bib));q.make();return `<div class="qr">${q.createSvgTag({cellSize:6,margin:2,scalable:true})}</div><div class="qrl">受付ではこのQRを読み取ります</div>`}catch(e){return ''}}
 const PKNOTE='※駐車券を事前に購入した方のみ駐車できます';
+/* 駐車券の有無を、暗い中でも一目で分かる帯で出す（不明のときは従来の駐車場の表示） */
+const PK_NG='駐車場には入れません。<br>乗り合わせまたは送迎を手配してください';
+function parkHTML(i,pk,sm){
+  if(pk==='あり')return `<div class="pkb ok${sm?' sm':''}">駐車券あり${i.parkLabel?`<small>${esc(i.parkLabel)}</small>`:''}</div>`;
+  if(pk==='なし')return `<div class="pkb ng${sm?' sm':''}">駐車券なし<small>${PK_NG}</small></div>`;
+  return '';
+}
 const whoHTML=n=>n?`<div class="who">${esc(n)}<small>さん</small></div>`:'';
 function showBig(list){
   const one=list.length===1,name=list[0]&&list[0].name;
   const el=document.createElement('div');el.id='bigbib';el.setAttribute('role','dialog');
-  el.innerHTML=one?(()=>{const b=list[0].bib,i=bibInfo(b);return `${whoHTML(name)}<div class="l">あなたのゼッケン番号</div><div class="n${String(b).length>4?' xs':String(b).length>2?' s':''}">${b}</div>
-    <div>${i.cat?`<span class="chip">${esc(i.cat)}</span>`:''}${i.parkLabel?`<span class="chip">${esc(i.parkLabel)}</span>`:''}</div>${i.parkLabel?`<div class="pk">${PKNOTE}</div>`:''}${qrHTML(b)}
+  el.innerHTML=one?(()=>{const b=list[0].bib,i=bibInfo(b),pk=list[0].pk;return `${whoHTML(name)}<div class="l">あなたのゼッケン番号</div><div class="n${String(b).length>4?' xs':String(b).length>2?' s':''}">${b}</div>
+    <div>${i.cat?`<span class="chip">${esc(i.cat)}</span>`:''}${!pk&&i.parkLabel?`<span class="chip">${esc(i.parkLabel)}</span>`:''}</div>${pk?parkHTML(i,pk):i.parkLabel?`<div class="pk">${PKNOTE}</div>`:''}${qrHTML(b)}
     <div class="say">受付と駐車場の入口で、<br>この画面をスタッフに見せてください</div>`})()
-    :whoHTML(name)+`<div class="l">同じお名前の方が${list.length}人います</div>`+list.map(x=>{const b=x.bib,i=bibInfo(b);return `<div class="cand"><div class="n s" style="font-size:min(22vw,120px);margin:0">${b}</div><span class="chip" style="font-size:15px">${esc(i.cat||'')}</span><span class="chip" style="font-size:15px">${esc(i.parkLabel||'')}</span></div>`}).join('')+`<div class="pk">${PKNOTE}</div><div class="say">受付と駐車場の入口で、この画面と<br>お名前をスタッフにお伝えください</div>`;
+    :whoHTML(name)+`<div class="l">同じお名前の方が${list.length}人います</div>`+list.map(x=>{const b=x.bib,i=bibInfo(b);return `<div class="cand"><div class="n s" style="font-size:min(22vw,120px);margin:0">${b}</div><span class="chip" style="font-size:15px">${esc(i.cat||'')}</span>${x.pk?parkHTML(i,x.pk,1):`<span class="chip" style="font-size:15px">${esc(i.parkLabel||'')}</span>`}</div>`}).join('')+`${list.every(x=>x.pk)?'':`<div class="pk">${PKNOTE}</div>`}<div class="say">受付と駐車場の入口で、この画面と<br>お名前をスタッフにお伝えください</div>`;
   el.innerHTML+=`<button class="x">閉じる</button>`;
   el.querySelector('.x').onclick=()=>{el.remove();render()};
   document.querySelector('#bigbib')?.remove();document.body.appendChild(el);
+}
+let meRefreshed=false;
+async function refreshMe(me){
+  if(meRefreshed||!me.name||!D.bibs)return;meRefreshed=true;
+  try{const got=await lookupBib(me.name);const by=new Map(got.map(x=>[String(x.bib),x]));
+    me.list=me.list.map(x=>({...x,pk:(by.get(String(x.bib))||{}).pk||''}));LS.set('kq50-me',me);if(route()==='top')render()}catch(e){}
 }
 function bibCardHTML(){
   if(!D.bibs)return '';
   const me=LS.get('kq50-me',null);
   if(me&&me.list&&me.list.length){
-    const b=me.list.map(x=>x.bib),i=bibInfo(b[0]);
-    return `<button class="mybib" id="myBib">${me.name?`<div class="who">${esc(me.name)}<small>さん</small></div>`:''}<div class="l">あなたのゼッケン番号</div><div class="n">${b.join(' / ')}</div><div class="p">${b.length===1?esc(i.parkLabel||''):''}</div>${b.length===1&&i.parkLabel?`<div class="pk">${PKNOTE}</div><br>`:''}<div class="tap">タップで大きく表示（受付・駐車場の入口で見せてください）</div></button>
+    const b=me.list.map(x=>x.bib),i=bibInfo(b[0]),pk=b.length===1?me.list[0].pk:'';
+    if(me.list.some(x=>x.pk===undefined))refreshMe(me);
+    return `<button class="mybib" id="myBib">${me.name?`<div class="who">${esc(me.name)}<small>さん</small></div>`:''}<div class="l">あなたのゼッケン番号</div><div class="n">${b.join(' / ')}</div>${pk?parkHTML(i,pk,1):`<div class="p">${b.length===1?esc(i.parkLabel||''):''}</div>${b.length===1&&i.parkLabel?`<div class="pk">${PKNOTE}</div><br>`:''}`}<div class="tap">タップで大きく表示（受付・駐車場の入口で見せてください）</div></button>
     <div style="text-align:right;margin:-8px 0 8px"><button class="mini" id="bibReset">別のお名前で調べる</button></div>`;
   }
   return `<div class="card bibq"><h2>ゼッケン番号を確認</h2>
