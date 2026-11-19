@@ -43,6 +43,8 @@ canvas.cert{width:100%;border:1px solid var(--line);border-radius:6px;margin:10p
 #bigbib .say{font-size:18px;margin:18px 0 22px;line-height:1.5}#bigbib .x{background:#fff;color:var(--acc);border:0;border-radius:12px;padding:14px 40px;font-size:18px;font-weight:800}
 .pkb{display:block;width:100%;box-sizing:border-box;border:3px solid #fff;border-radius:14px;padding:10px 14px;margin:12px auto 0;max-width:440px;font-size:30px;font-weight:900;line-height:1.2;color:#fff}.pkb small{display:block;font-size:17px;font-weight:800;line-height:1.45;margin-top:4px}
 .pkb.ok{background:#15803d}.pkb.ng{background:#dc2626}.pkb.sm{font-size:22px;padding:8px 10px;margin:8px auto 4px}.pkb.sm small{font-size:14px}
+.rtabs{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}.rtab{flex:1;border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 10px;font:inherit;font-weight:700;cursor:pointer}.rtab.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.rtbl{width:100%;border-collapse:collapse;margin-top:10px;font-size:14px}.rtbl th,.rtbl td{padding:7px 4px;border-bottom:1px solid var(--line);text-align:left}.rtbl tr[data-bib]{cursor:pointer}.rtbl td:last-child{font-variant-numeric:tabular-nums;white-space:nowrap}
 #bigbib .cand{border-top:1px solid rgba(255,255,255,.35);padding:10px 0;width:100%;max-width:420px}
 
 .inapp{border:3px solid #f59e0b;background:#fffbeb}.inapp a.btn{display:block;text-align:center;text-decoration:none}
@@ -276,16 +278,28 @@ async function saveForOffline(){
   b.disabled=false;
 }
 /* ---- リザルト ---- */
-function findRow(bib){const r=D.results;return r&&r.rows.find(x=>String(x.bib)===String(+bib))}
+function findRow(bib){const r=D.results;return r&&r.rows.find(x=>String(x.bib)===String(bib)||String(x.bib)===String(+bib))}
 function renderResults(){
   const R=D.results;
   if(!R||!R.published){$('#main').innerHTML=`<a class="back" href="#top">← 大会案内</a><div class="card">リザルトは大会後に公開します。</div>`;return}
-  $('#main').innerHTML=`<a class="back" href="#top">← 大会案内</a><div class="card res"><h2 style="margin:0 0 8px;font-size:18px">リザルト</h2>
+  const cats=[...new Set(R.rows.map(x=>x.cat))],st=renderResults.st||(renderResults.st={cat:cats[0],sx:'',q:LS.get('kq50-bib','')});if(!cats.includes(st.cat))st.cat=cats[0];
+  const tab=(on,attr,v,t)=>`<button class="rtab${on?' on':''}" ${attr}="${esc(v)}">${esc(t)}</button>`;
+  $('#main').innerHTML=`<a class="back" href="#top">← 大会案内</a><div class="card res"><h2 style="margin:0 0 4px;font-size:18px">リザルト</h2>
    <div class="muted">${esc(R.note||'')}（${fmt(R.updatedAt)} 確定）</div>
-   <input id="bib" inputmode="numeric" placeholder="ゼッケン番号" value="${esc(LS.get('kq50-bib',''))}" style="margin-top:10px"><div id="hit"></div></div>`;
-  const show=()=>{const v=$('#bib').value.trim();LS.set('kq50-bib',v);const x=v&&findRow(v);
-    $('#hit').innerHTML=!v?'':!x?'<div class="err">このゼッケン番号のリザルトはありません</div>':resultHTML(x)};
-  $('#bib').oninput=show;show();
+   <div class="rtabs">${cats.map(c=>tab(c===st.cat,'data-cat',c,(R.cats&&R.cats[c])||c)).join('')}</div>
+   <div class="rtabs">${[['','総合'],['男','男子'],['女','女子']].map(([v,t])=>tab(v===st.sx,'data-sx',v,t)).join('')}</div>
+   <input id="bib" placeholder="ゼッケン番号か名前で探す" value="${esc(st.q||'')}" style="margin-top:8px"><div id="hit"></div><div id="rlist"></div></div>`;
+  const list=()=>{const q=($('#bib').value||'').trim(),qn=q.replace(/\s/g,'');st.q=q;
+    let rows=R.rows.filter(x=>x.cat===st.cat&&(!st.sx||x.sex===st.sx));
+    if(q)rows=rows.filter(x=>String(x.bib)===q||(qn&&String(x.name||'').replace(/\s/g,'').includes(qn)));
+    const rk=x=>st.sx?x.sexRank:x.rank;
+    $('#rlist').innerHTML=rows.length?`<table class="rtbl"><tr><th>順位</th><th>No.</th><th>氏名</th><th>タイム</th></tr>${rows.map(x=>`<tr data-bib="${esc(x.bib)}"><td>${x.time?rk(x)+'位':esc(x.status)}</td><td>${esc(x.bib)}</td><td>${esc(x.name||'')}</td><td>${esc(x.time||'')}</td></tr>`).join('')}</table>`:'<div class="err">該当する記録がありません</div>';
+    $('#rlist').querySelectorAll('tr[data-bib]').forEach(tr=>tr.onclick=()=>{const x=findRow(tr.dataset.bib);$('#hit').innerHTML=x?resultHTML(x):'';$('#hit').scrollIntoView({behavior:'smooth',block:'start'})});
+    const one=q&&rows.length===1?rows[0]:null;$('#hit').innerHTML=one?resultHTML(one):'';
+  };
+  $('#main').querySelectorAll('[data-cat]').forEach(b=>b.onclick=()=>{st.cat=b.dataset.cat;renderResults()});
+  $('#main').querySelectorAll('[data-sx]').forEach(b=>b.onclick=()=>{st.sx=b.dataset.sx;renderResults()});
+  $('#bib').oninput=list;list();
 }
 function resultHTML(x){
   const R=D.results;const cat=(R.cats&&R.cats[x.cat])||x.cat;
@@ -338,7 +352,7 @@ function loadImg(src){return new Promise((ok,ng)=>{const i=new Image();i.onload=
 function certKind(x,C){
   const a=C.award||{},c=(D.results.counts||{})[x.cat]||{},n=k=>c[k]||0,sx=x.sex==='女'?'女子':'男子';
   const line=(lab,r,k)=>r?`${lab}：${r}位${n(k)?`（${r}/${n(k)}）`:''}`:'';
-  const prize=(x.sexRank&&x.sexRank<=(a.gender||0))||(x.rank&&x.rank<=(a.overall||0));
+  const prize=(!a.cats||a.cats.includes(x.cat))&&((x.sexRank&&x.sexRank<=(a.gender||0))||(x.rank&&x.rank<=(a.overall||0)));
   return prize?{title:'賞状',lines:[line(sx,x.sexRank,x.sex),line('総合',x.rank,'all')].filter(Boolean)}:{title:'記録証',lines:[line('総合',x.rank,'all')].filter(Boolean)};
 }
 async function drawCert(x,name,C){
