@@ -293,7 +293,7 @@ function renderResults(){
     let rows=R.rows.filter(x=>x.cat===st.cat&&(!st.sx||x.sex===st.sx));
     if(q)rows=rows.filter(x=>String(x.bib)===q||(qn&&String(x.name||'').replace(/\s/g,'').includes(qn)));
     const rk=x=>st.sx?x.sexRank:x.rank;
-    $('#rlist').innerHTML=rows.length?`<table class="rtbl"><tr><th>順位</th><th>No.</th><th>氏名</th><th>タイム</th></tr>${rows.map(x=>`<tr data-bib="${esc(x.bib)}"><td>${x.time?rk(x)+'位':esc(x.status)}</td><td>${esc(x.bib)}</td><td>${esc(x.name||'')}</td><td>${esc(x.time||'')}</td></tr>`).join('')}</table>`:'<div class="err">該当する記録がありません</div>';
+    $('#rlist').innerHTML=rows.length?`<table class="rtbl"><tr><th>順位</th><th>No.</th><th>氏名</th><th>タイム</th></tr>${rows.map(x=>`<tr data-bib="${esc(x.bib)}"><td>${x.time?(rk(x)?rk(x)+'位':(x.invited?'招待':'—')):esc(x.status)}</td><td>${esc(x.bib)}</td><td>${esc(x.name||'')}</td><td>${esc(x.time||'')}</td></tr>`).join('')}</table>`:'<div class="err">該当する記録がありません</div>';
     $('#rlist').querySelectorAll('tr[data-bib]').forEach(tr=>tr.onclick=()=>{const x=findRow(tr.dataset.bib);$('#hit').innerHTML=x?resultHTML(x):'';$('#hit').scrollIntoView({behavior:'smooth',block:'start'})});
     const one=q&&rows.length===1?rows[0]:null;$('#hit').innerHTML=one?resultHTML(one):'';
   };
@@ -305,7 +305,7 @@ function resultHTML(x){
   const R=D.results;const cat=(R.cats&&R.cats[x.cat])||x.cat;
   return `<div style="margin-top:12px"><div class="muted">No.${esc(x.bib)}　${esc(cat)}</div><div style="font-weight:700;font-size:18px">${esc(x.name||'（氏名非公開）')}</div>
   <div class="big">${esc(x.time||x.status)}</div>
-  <table><tr><th>状態</th><td>${esc(x.status)}</td></tr>${x.rank?`<tr><th>総合順位</th><td>${x.rank}位</td></tr>`:''}${x.sexRank?`<tr><th>${x.sex==='女'?'女子':'男子'}順位</th><td>${x.sexRank}位</td></tr>`:''}</table>
+  <table><tr><th>状態</th><td>${esc(x.status)}</td></tr>${x.invited?'<tr><th>区分</th><td>招待選手（順位はつけません）</td></tr>':''}${x.rank?`<tr><th>総合順位</th><td>${x.rank}位</td></tr>`:''}${x.sexRank?`<tr><th>${x.sex==='女'?'女子':'男子'}順位</th><td>${x.sexRank}位</td></tr>`:''}</table>
   ${x.splits&&x.splits.length?`<h3 style="font-size:15px;margin:12px 0 4px">区間タイムと順位の推移</h3><table><tr><th>地点</th><th>通過</th><th>区間</th><th>順位</th></tr>${x.splits.map(s=>`<tr><td>${esc(s.pt)}</td><td>${esc(s.at||'')}</td><td>${esc(s.seg||'')}</td><td>${s.rank?s.rank+'位':''}</td></tr>`).join('')}</table>`:''}
   <p><a href="#cert">記録証をダウンロード</a></p></div>`;
 }
@@ -351,7 +351,8 @@ function loadImg(src){return new Promise((ok,ng)=>{const i=new Image();i.onload=
    入賞者（男女別の上位）：男子／女子の順位と総合順位の2行。それ以外：総合順位の1行 */
 function certKind(x,C){
   const a=C.award||{},c=(D.results.counts||{})[x.cat]||{},n=k=>c[k]||0,sx=x.sex==='女'?'女子':'男子';
-  const line=(lab,r,k)=>r?`${lab}：${r}位${n(k)?`（${r}/${n(k)}）`:''}`:'';
+  if(x.invited)return {title:'記録証',lines:['招待選手']};
+  const line=(lab,r,k)=>r?`${lab}：${r}位${n(k)>1?`（${r}/${n(k)}）`:''}`:'';
   const prize=(!a.cats||a.cats.includes(x.cat))&&((x.sexRank&&x.sexRank<=(a.gender||0))||(x.rank&&x.rank<=(a.overall||0)));
   return prize?{title:'賞状',lines:[a.gender?line(sx,x.sexRank,x.sex):'',line('総合',x.rank,'all')].filter(Boolean)}:{title:'記録証',lines:[line('総合',x.rank,'all')].filter(Boolean)};
 }
