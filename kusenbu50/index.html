@@ -54,7 +54,7 @@ footer{font-size:12px;color:var(--sub);text-align:center;padding:16px}
 <header><div class="t">KUSENBU QUEST 50</div><div class="d" id="date">大会案内</div></header>
 <div class="st" id="st">読み込み中…</div>
 <main id="main"></main>
-<footer>大会本部（緊急連絡先）<span id="emg"></span><br>KUSENBU QUEST 50 実行委員会・7trails</footer>
+<footer><span id="emgline">大会本部（緊急連絡先）<span id="emg"></span><br></span>KUSENBU QUEST 50 実行委員会・7trails</footer>
 <script src="qrcode.js"></script>
 <script>
 'use strict';
@@ -83,7 +83,7 @@ async function getJSON(name){
 }
 async function load(){
   const [g,n,r,b]=await Promise.all(['guide','notices','results','bibs'].map(getJSON));
-  D.guide=g;D.notices=n;D.results=r;D.bibs=b;render();
+  maskEmg(g);D.guide=g;D.notices=n;D.results=r;D.bibs=b;render();
   if(navigator.onLine&&await fetchFbNotices())render();
   refreshSaved();
 }
@@ -229,7 +229,7 @@ function route(){return (location.hash||'#top').slice(1)}
 function render(){
   statusLine();const g=D.guide;
   if(!g){$('#main').innerHTML='<div class="card">案内を読み込めませんでした。通信できる場所で開いてください。</div>';return}
-  $('#date').textContent=g.date+'　大会案内';$('#emg').textContent='：'+g.emergency;
+  $('#date').textContent=g.date+'　大会案内';showEmg(g);
   const v=route();window.scrollTo(0,0);
   if(v==='top')return renderTop();
   if(v==='results')return renderResults();
@@ -309,6 +309,10 @@ function resultHTML(x){
   ${x.splits&&x.splits.length?`<h3 style="font-size:15px;margin:12px 0 4px">区間タイムと順位の推移</h3><table><tr><th>地点</th><th>通過</th><th>区間</th><th>順位</th></tr>${x.splits.map(s=>`<tr><td>${esc(s.pt)}</td><td>${esc(s.at||'')}</td><td>${esc(s.seg||'')}</td><td>${s.rank?s.rank+'位':''}</td></tr>`).join('')}</table>`:''}
   <p><a href="#cert">記録証をダウンロード</a></p></div>`;
 }
+/* 大会本部の電話番号：大会当日が終わったら表示しない（emergencyUntil、なければ date の日の 23:59:59 まで） */
+function emgUntil(g){if(g.emergencyUntil)return Date.parse(g.emergencyUntil);const m=(g.date||'').match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);return m?Date.parse(`${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}T23:59:59+09:00`):Infinity}
+function maskEmg(g){if(!g||!g.emergency||Date.now()<=emgUntil(g))return;const m=g.emergency.match(/0\d{1,4}-\d{1,4}-\d{3,4}/);if(m)(g.sections||[]).forEach(x=>{if(x.body)x.body=x.body.split(m[0]).join('（大会終了のため掲載終了）')});g.emergency=''}
+function showEmg(g){const on=!!g.emergency&&Date.now()<=emgUntil(g);$('#emgline').style.display=on?'':'none';$('#emg').textContent=on?'：'+g.emergency:''}
 /* ---- 記録証 ---- */
 async function sha256(s){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
 function renderCert(){
